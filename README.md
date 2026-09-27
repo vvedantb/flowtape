@@ -1,6 +1,6 @@
 # flowtape
 
-flowtape records a user journey in your running Vite + React app and turns it into a prompt that Claude Code can replay and explore. You click **Record** in a small in-app overlay, use the app as normal, then click **Stop** and **Export**. flowtape writes the flow as JSON and as a Markdown prompt with steps, assertions, fuzz hints and limits. It is local-first. There is no account, no cloud service and no browser extension. Passwords, masked fields and secret-looking values are redacted before anything is stored.
+flowtape records a user journey in your running Vite + React app and turns it into a prompt that Claude Code can replay and explore. You click **Record** in a small in-app overlay, use the app as normal, then click **Stop** and **Export**. flowtape writes the flow as JSON and as a Markdown prompt with steps, assertions, fuzz hints and limits. In development it also keeps a **session history**: an always-on, redacted log of what you did in each browser session, so an agent can review recent activity. It is local-first. There is no account, no cloud service and no browser extension. Passwords, masked fields and secret-looking values are redacted before anything is stored.
 
 ## Add it to a Vite app
 
@@ -46,6 +46,7 @@ The overlay renders only outside production builds. Pass `enabled` to force it o
 | `enabled` | on outside production | Show or hide the overlay. |
 | `endpoint` | `/__flowtape` | Base URL of the middleware. |
 | `recorder` | shared page recorder | Supply your own `createRecorder()` instance. |
+| `sessionHistory` | shared page history | Supply your own `createSessionHistory({ capture })`, for example with `defaultEnabled: false`. Share one `createCapture()` with `createRecorder({ capture })` so each event is captured once. |
 
 ## Record, stop, name, export
 
@@ -57,15 +58,55 @@ The overlay renders only outside production builds. Pass `enabled` to force it o
 
 Clicks inside the overlay are ignored. Text typing is debounced, so each field records its final value once. The recording survives component remounts and hot reloads, but not a full page load.
 
+## Session history
+
+Named flows and session history are separate:
+
+| | Record flow | Session history |
+| --- | --- | --- |
+| Starts | When you click **Record** | Automatically in development (on by default) |
+| Ends | When you click **Stop** | When you switch it off or close the tab |
+| Output | `flows/<slug>.json` and `prompts/<slug>.md` on **Export** | `history/<YYYY-MM-DD>-<sessionId>.jsonl`, appended every second |
+| Git | Committed | Ignored |
+
+Session history uses the same page listeners, event model and redaction as named recording, so both can run at once and each click is captured once. It logs navigations, clicks, field values (type-only for masked fields), form submits, and uncaught errors and unhandled promise rejections. Error lines keep only a scrubbed message, file, line and column, never a stack. flowtape does not capture network traffic, so history never contains request bodies, cookies or `Authorization` headers.
+
+A session is one browser tab. Reloading appends to the same file; a new tab starts a new file. The first line of each file is a `session` envelope (id, start time, start URL, user agent, viewport). Every later line is one event, where `ts` is milliseconds since the session started. History is never turned into a named flow automatically; use **Record** for that.
+
+**Toggle it** with the **Session history** switch at the bottom of the overlay. When it is on, the overlay shows the session id, the event count and the file path. The choice is saved in `localStorage` under `flowtape:history` (`1` or `0`), so it survives reloads.
+
+**Review it with an agent.** Point Claude Code at the folder:
+
+```sh
+claude "Read the latest files in .flowtape/history/ and summarise what I did in the app and any errors I hit"
+```
+
+**List it from the terminal:**
+
+```sh
+npx flowtape history            # nearest .flowtape/history/ at or above the current folder
+npx flowtape history ./my-app   # or start from another folder
+npm run history                 # in this repo: the demo's history
+```
+
+Each row shows the modified time (UTC), size and file path, newest first.
+
 ## Where files land
 
 ```
 <vite root>/.flowtape/
-  flows/<slug>.json     # FlowDocument (version 1), validated with Zod
-  prompts/<slug>.md     # Claude Code prompt generated from the flow
+  flows/<slug>.json                        # FlowDocument (version 1), validated with Zod
+  prompts/<slug>.md                        # Claude Code prompt generated from the flow
+  history/<YYYY-MM-DD>-<sessionId>.jsonl   # session history, gitignored
 ```
 
-Flows and prompts are **meant to be committed**. They act as living, reviewable test journeys. flowtape does not add them to `.gitignore`, and the plugin tells Vite's watcher to ignore `.flowtape/**` so that saving does not reload the page. Exporting under the same name overwrites the previous files.
+Flows and prompts are **meant to be committed**. They act as living, reviewable test journeys. Session history is personal and noisy, so add it to your `.gitignore`:
+
+```gitignore
+**/.flowtape/history/
+```
+
+This repo's `.gitignore` already does, and a test checks that history is ignored while flows and prompts are not. The plugin tells Vite's watcher to ignore `.flowtape/**` so that saving and appending do not reload the page. Exporting under the same name overwrites the previous files.
 
 The middleware also exposes:
 
@@ -75,6 +116,7 @@ The middleware also exposes:
 | `GET /__flowtape/flows` | Saved flows, newest first |
 | `GET /__flowtape/flows/:slug` | One flow |
 | `POST /__flowtape/flows` | Validates, redacts, writes the flow and prompt |
+| `POST /__flowtape/history` | Validates `{ sessionId, startedAt, startUrl?, meta?, events }`, redacts and appends to the session file |
 
 ## Feed the prompt to Claude Code
 
@@ -94,7 +136,7 @@ Redacted fields name an environment variable, such as `$FLOWTAPE_PASSWORD`. Set 
 
 ## Redaction
 
-Redaction runs three times: in the browser as events are recorded, on the server before files are written, and over the final Markdown.
+Redaction runs three times: in the browser as events are recorded, on the server before files are written, and over the final Markdown. Session history gets the first two.
 
 - **`input[type=password]`**: the value is never stored. The event keeps `redacted: true`, `value: null` and the value's length.
 - **`data-flowtape-mask`**: put this on a field or any ancestor. Every field inside is recorded type-only in the same way. Click text inside a masked area is dropped too.
@@ -125,7 +167,7 @@ Open the demo, click **Record**, sign in with any email, add a note, then click 
 npm run build        # package (tsup, ESM + CJS + types) and demo
 npm test             # Vitest unit tests
 npm run typecheck    # package, demo and e2e
-npm run test:e2e     # Playwright: records a real flow in the demo and checks the files
+npm run test:e2e     # Playwright: records a real flow and session history in the demo and checks the files
 ```
 
 Requires Node 18 or later.
