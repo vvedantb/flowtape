@@ -1,7 +1,8 @@
 import { useState, useSyncExternalStore, type CSSProperties, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { z } from 'zod';
-import { createFlowDocument, createRecorder, type Recorder } from '../recorder';
+import { createSessionHistory, type SessionHistory, type SessionHistorySnapshot } from '../history';
+import { createCapture, createFlowDocument, createRecorder, type Capture, type Recorder } from '../recorder';
 import { SavedFlowSchema } from '../schemas';
 import type { FlowEvent, SavedFlow } from '../types';
 
@@ -14,6 +15,8 @@ export interface FlowtapeOverlayProps {
   endpoint?: string;
   /** Bring your own recorder. Default: one shared recorder per page, so recordings survive remounts and HMR. */
   recorder?: Recorder;
+  /** Bring your own session history. Default: one per page, sharing page listeners with the default recorder. */
+  sessionHistory?: SessionHistory;
 }
 
 type Status =
@@ -24,10 +27,24 @@ type Status =
 
 const ErrorSchema = z.object({ error: z.string() });
 
+// One capture per page: named recording and session history share its listeners, so each DOM event is handled once.
+let sharedCapture: Capture | undefined;
 let sharedRecorder: Recorder | undefined;
+let sharedHistory: SessionHistory | undefined;
+
+function defaultCapture(): Capture {
+  sharedCapture ??= createCapture();
+  return sharedCapture;
+}
+
 function defaultRecorder(): Recorder {
-  sharedRecorder ??= createRecorder();
+  sharedRecorder ??= createRecorder({ capture: defaultCapture() });
   return sharedRecorder;
+}
+
+function defaultHistory(endpoint: string): SessionHistory {
+  sharedHistory ??= createSessionHistory({ capture: defaultCapture(), endpoint });
+  return sharedHistory;
 }
 
 function isProduction(): boolean {
@@ -39,6 +56,8 @@ function isProduction(): boolean {
 }
 
 const noopSubscribe = () => () => {};
+const offHistory: SessionHistorySnapshot = { enabled: false, active: false, events: 0 };
+const getOffHistory = () => offHistory;
 
 /** False during SSR and hydration, true once running in the browser. */
 function useIsClient(): boolean {
@@ -74,13 +93,20 @@ async function postFlow(endpoint: string, body: string): Promise<SavedFlow> {
   throw new Error(error.success ? error.data.error : `Save failed (${res.status})`);
 }
 
-/** Floating record / stop / export panel. Portals into `document.body`. */
-export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder = defaultRecorder() }: FlowtapeOverlayProps) {
+/** Floating panel: named flow recording (record / stop / export) and the session history toggle. Portals into `document.body`. */
+export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder = defaultRecorder(), sessionHistory = defaultHistory(endpoint) }: FlowtapeOverlayProps) {
   const isClient = useIsClient();
+  const on = (enabled ?? !isProduction()) && isClient;
   const snapshot = useSyncExternalStore(recorder.subscribe, recorder.getSnapshot, recorder.getSnapshot);
+  // Subscribing is what starts session capture, so only subscribe while the overlay is shown.
+  const history = useSyncExternalStore(
+    on ? sessionHistory.subscribe : noopSubscribe,
+    on ? sessionHistory.getSnapshot : getOffHistory,
+    getOffHistory,
+  );
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
 
-  if (!(enabled ?? !isProduction()) || !isClient) return null;
+  if (!on) return null;
 
   const { recording, events } = snapshot;
   const last = events[events.length - 1];
@@ -117,7 +143,7 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
     <div data-flowtape-ui="" style={styles.panel} role="region" aria-label="flowtape recorder">
       <div style={styles.header}>
         <span style={{ ...styles.dot, background: recording ? '#ef4444' : '#6b7280' }} aria-hidden />
-        <strong>flowtape</strong>
+        <strong>Record flow</strong>
         <span style={styles.muted} data-testid="flowtape-count">
           {recording ? 'Recording' : 'Idle'} · {events.length} events
         </span>
@@ -160,6 +186,36 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
           {status.message}
         </div>
       ) : null}
+      <div style={styles.section} data-testid="flowtape-history">
+        <div style={styles.header}>
+          <span style={{ ...styles.dot, background: history.active ? '#22c55e' : '#6b7280' }} aria-hidden />
+          <strong>Session history</strong>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={history.enabled}
+            aria-label="Session history"
+            style={{ ...styles.button, ...styles.toggle, ...(history.enabled ? styles.primary : {}) }}
+            onClick={() => sessionHistory.setEnabled(!history.enabled)}
+          >
+            {history.enabled ? 'On' : 'Off'}
+          </button>
+        </div>
+        {history.active ? (
+          <div style={styles.detail}>
+            <span data-testid="flowtape-history-session">{history.sessionId}</span> · {history.events} events
+            <br />
+            <code style={styles.path}>{history.file ?? '.flowtape/history/'}</code>
+          </div>
+        ) : (
+          <div style={styles.detail}>Off. Named recording still works.</div>
+        )}
+        {history.error ? (
+          <div style={{ ...styles.status, color: '#fca5a5' }} role="alert">
+            {history.error}
+          </div>
+        ) : null}
+      </div>
     </div>,
     document.body,
   );
@@ -208,5 +264,10 @@ const styles = {
   },
   preview: { color: '#d1d5db', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   status: { color: '#86efac', wordBreak: 'break-all' },
+  // Tone shift, not a divider, separates session history from named recording.
+  section: { display: 'grid', gap: 4, margin: '0 -12px -12px', padding: '8px 12px 12px', borderRadius: '0 0 10px 10px', background: '#0b1220' },
+  toggle: { marginLeft: 'auto', padding: '1px 8px' },
+  detail: { color: '#9ca3af' },
+  path: { color: '#d1d5db', wordBreak: 'break-all' },
   link: { marginLeft: 6, padding: 0, border: 0, background: 'none', color: '#93c5fd', font: 'inherit', cursor: 'pointer' },
 } satisfies Record<string, CSSProperties>;
