@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "id": "db7fdd2b-af3f-4026-a359-f8edb0a31033",
+  "slug": "login-and-add-note",
+  "name": "Login and add note",
+  "createdAt": "2026-09-27T19:10:11.669Z",
+  "updatedAt": "2026-09-27T19:10:11.669Z",
+  "startUrl": "http://localhost:5180/",
+  "events": [
+    {
+      "type": "navigate",
+      "ts": 1,
+      "url": "http://localhost:5180/",
+      "title": "flowtape demo"
+    },
+    {
+      "type": "input",
+      "ts": 21,
+      "selector": "[data-testid=\"login-email\"]",
+      "value": "ada@example.test",
+      "inputType": "email",
+      "name": "Email",
+      "redacted": false
+    },
+    {
+      "type": "input",
+      "ts": 29,
+      "selector": "[data-testid=\"login-password\"]",
+      "value": null,
+      "inputType": "password",
+      "name": "Password",
+      "redacted": true,
+      "length": 15
+    },
+    {
+      "type": "input",
+      "ts": 61,
+      "selector": "[data-testid=\"login-member-id\"]",
+      "value": null,
+      "inputType": "text",
+      "name": "Member ID",
+      "redacted": true,
+      "length": 11
+    },
+    {
+      "type": "click",
+      "ts": 63,
+      "selector": "[data-testid=\"login-submit\"]",
+      "text": "Sign in",
+      "role": "button",
+      "name": "Sign in"
+    },
+    {
+      "type": "submit",
+      "ts": 65,
+      "selector": "[data-testid=\"login-form\"]",
+      "method": "post"
+    },
+    {
+      "type": "navigate",
+      "ts": 66,
+      "url": "http://localhost:5180/notes",
+      "title": "flowtape demo"
+    },
+    {
+      "type": "input",
+      "ts": 114,
+      "selector": "[data-testid=\"note-input\"]",
+      "value": "Water the plants",
+      "inputType": "text",
+      "name": "New note",
+      "redacted": false
+    },
+    {
+      "type": "click",
+      "ts": 115,
+      "selector": "[data-testid=\"note-add\"]",
+      "text": "Add note",
+      "role": "button",
+      "name": "Add note"
+    },
+    {
+      "type": "submit",
+      "ts": 116,
+      "selector": "[data-testid=\"note-form\"]",
+      "method": "get"
+    }
+  ],
+  "meta": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    }
+  }
+}
