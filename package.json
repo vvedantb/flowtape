@@ -1,0 +1,25 @@
+{
+  "name": "flowtape-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "npm run build -w @vedantb/flowtape && npm run build -w flowtape-vite-demo",
+    "test": "npm test -w @vedantb/flowtape",
+    "test:e2e": "npm run build -w @vedantb/flowtape && playwright test",
+    "dev": "npm run build -w @vedantb/flowtape && npm run dev -w flowtape-vite-demo",
+    "typecheck": "npm run typecheck -w @vedantb/flowtape && npm run typecheck -w flowtape-vite-demo && tsc -p e2e --noEmit",
+    "history": "flowtape history examples/vite-demo"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  }
+}
