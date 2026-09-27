@@ -134,9 +134,14 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
     }
   };
 
+  // A rejected write must not surface as an unhandled rejection: session history would log it as an app error.
   const onCopy = async (saved: SavedFlow) => {
-    await navigator.clipboard.writeText(saved.prompt);
-    setStatus({ kind: 'saved', saved, copied: true });
+    try {
+      await navigator.clipboard.writeText(saved.prompt);
+      setStatus({ kind: 'saved', saved, copied: true });
+    } catch (err) {
+      setStatus({ kind: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}. The prompt is saved in ${saved.promptFile}.` });
+    }
   };
 
   return createPortal(

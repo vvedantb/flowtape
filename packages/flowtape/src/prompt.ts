@@ -1,4 +1,4 @@
-import { redactFlow, scrubText } from './redact';
+import { REDACTED, redactFlow, scrubText } from './redact';
 import type { FlowDocument, FlowEvent, InputEvent } from './types';
 
 export interface PromptOptions {
@@ -75,8 +75,12 @@ function describe(event: FlowEvent, index: number, events: FlowEvent[], pathOf: 
         return `${event.value === 'checked' ? 'Check' : 'Uncheck'} the ${event.inputType} ${field}.`;
       }
       if (!event.value) return `Clear the field ${field}.`;
-      if (event.inputType === 'select') return `Select ${code(truncate(event.value))} in ${field}.`;
-      return `Type ${code(truncate(event.value))} into the field ${field}.`;
+      // A raw line break would end the step and let typed text start new Markdown blocks.
+      const value = code(truncate(event.value).replace(/\r\n?|\n/g, '\\n'));
+      if (event.inputType === 'select') return `Select ${value} in ${field}.`;
+      const breaks = /[\r\n]/.test(event.value) ? ' `\\n` marks a line break.' : '';
+      const scrubbed = event.value.includes(REDACTED) ? ' **Redacted:** part of the recorded value looked like a secret. Type a synthetic value in its place.' : '';
+      return `Type ${value} into the field ${field}.${breaks}${scrubbed}`;
     }
     case 'submit': {
       const how = [event.method?.toUpperCase(), event.action].filter(Boolean).join(' ');
