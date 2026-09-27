@@ -19,4 +19,11 @@ export default defineConfig([
     external: ['vite'],
     clean: false,
   },
+  // `flowtape` bin. The source hashbang is kept.
+  {
+    entry: { cli: 'src/cli.ts' },
+    format: ['esm'],
+    target: 'node18',
+    clean: false,
+  },
 ]);
