@@ -1,3 +1,4 @@
+import { slugify } from './schemas';
 import type { FlowDocument, FlowEvent, HistoryEvent, InputEvent } from './types';
 
 /** Put this on any element (or ancestor) whose value must never be stored. */
@@ -93,11 +94,13 @@ export function redactHistoryEvent(event: HistoryEvent): HistoryEvent {
   return { ...event, message: scrubText(event.message).slice(0, MAX_ERROR_MESSAGE), source: scrubOptional(event.source) };
 }
 
-/** Scrub a whole flow. Safe to run more than once. */
+/** Scrub a whole flow. Safe to run more than once. The slug names files, so a secret in the name must not survive in it. */
 export function redactFlow(doc: FlowDocument): FlowDocument {
+  const name = scrubText(doc.name);
   return {
     ...doc,
-    name: scrubText(doc.name),
+    name,
+    slug: name === doc.name ? slugify(scrubText(doc.slug)) : slugify(name),
     startUrl: scrubOptional(doc.startUrl),
     events: doc.events.map(redactEvent),
     meta: doc.meta && { ...doc.meta, userAgent: scrubOptional(doc.meta.userAgent) },

@@ -1,6 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import { historyFile, removeHistory, waitForHistory } from './history';
+import path from 'node:path';
+import { demoRoot, historyFile, removeHistory, waitForHistory } from './history';
+
+const repoRoot = path.resolve(demoRoot, '../..');
+
+/** Run the built `flowtape` bin the way a user would, from the repo root. */
+function flowtapeCli(...args: string[]) {
+  return spawnSync('npx', ['--no-install', 'flowtape', ...args], { cwd: repoRoot, encoding: 'utf8' });
+}
 
 test.afterEach(async ({ page }) => {
   if (!process.env.FLOWTAPE_KEEP) await removeHistory(page);
@@ -47,4 +56,22 @@ test('session history is on by default, writes redacted JSONL and remembers the 
   const after = await waitForHistory(page, 'Logged again');
   expect(await historyFile(page)).toBe(file);
   expect(after.join('\n')).not.toContain('Not logged');
+});
+
+test('npx flowtape history lists the session file', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('login-email').fill('cli@example.test');
+  await waitForHistory(page, 'cli@example.test');
+  const file = await historyFile(page);
+  if (!file) throw new Error('History file missing');
+
+  const listed = flowtapeCli('history', 'examples/vite-demo');
+  expect(listed.status).toBe(0);
+  const first = listed.stdout.split('\n')[0];
+  expect(first).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC +\d+(\.\d)? (B|KB|MB)  /);
+  expect(first.endsWith(path.relative(repoRoot, file))).toBe(true);
+
+  const unknown = flowtapeCli('nope');
+  expect(unknown.status).toBe(1);
+  expect(unknown.stdout).toContain('Usage: flowtape history [path]');
 });

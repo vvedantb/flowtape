@@ -26,6 +26,14 @@ describe('saveFlow', () => {
     expect(fs.readFileSync(path.join(root, '.flowtape/flows/leaky.json'), 'utf8')).not.toContain('hunter2');
   });
 
+  it('keeps secrets in the flow name out of the slug and file names', () => {
+    const saved = saveFlow(opts, makeFlow([], { name: 'Deploy sk-test-LEAKME123', slug: 'deploy-sk-test-leakme123' }));
+    expect(saved).toMatchObject({ slug: 'deploy-redacted', flowFile: '.flowtape/flows/deploy-redacted.json' });
+    expect(fs.readdirSync(path.join(root, '.flowtape/flows')).join()).not.toMatch(/leakme/i);
+    expect(fs.readFileSync(path.join(root, saved.flowFile), 'utf8')).not.toMatch(/leakme/i);
+    expect(saved.prompt).not.toMatch(/leakme/i);
+  });
+
   it('refuses path traversal', () => {
     expect(readFlow(opts, '../../etc/passwd')).toBeNull();
     expect(() => saveFlow(opts, makeFlow([], { slug: '../escape' }))).toThrow();
