@@ -1,7 +1,7 @@
 import type { Plugin } from 'vite';
 import { createMiddleware, type FlowtapeServerOptions } from './server';
 
-export { ENDPOINT, listFlows, readFlow, saveFlow } from './server';
+export { ENDPOINT, appendHistory, findHistoryDir, listFlows, listHistory, readFlow, saveFlow } from './server';
 export type { FlowtapeServerOptions } from './server';
 
 export interface FlowtapeViteOptions {
@@ -11,7 +11,7 @@ export interface FlowtapeViteOptions {
   dir?: string;
 }
 
-/** Vite plugin: serves `/__flowtape/*` so the overlay can save flows and Claude Code prompts. */
+/** Vite plugin: serves `/__flowtape/*` so the overlay can save flows, Claude Code prompts and session history. */
 export function flowtape(options: FlowtapeViteOptions = {}): Plugin {
   let root = process.cwd();
   let active = false;

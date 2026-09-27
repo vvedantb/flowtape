@@ -1,8 +1,10 @@
 export { FlowtapeOverlay, DEFAULT_ENDPOINT } from './client/overlay';
 export type { FlowtapeOverlayProps } from './client/overlay';
-export { createRecorder, createFlowDocument, selectorFor, roleFor, nameFor, UI_ATTR } from './recorder';
-export type { Recorder, RecorderOptions, RecorderSnapshot, CreateFlowInput } from './recorder';
-export { MASK_ATTR, REDACTED, scrubText, isSensitiveName, isMaskedElement, redactEvent, redactInput, redactFlow } from './redact';
+export { createCapture, createRecorder, createFlowDocument, selectorFor, roleFor, nameFor, appendEvent, rebase, UI_ATTR } from './recorder';
+export type { Capture, CaptureOptions, Recorder, RecorderOptions, RecorderSnapshot, CreateFlowInput } from './recorder';
+export { createSessionHistory, HISTORY_PREF_KEY, HISTORY_SESSION_KEY } from './history';
+export type { SessionHistory, SessionHistoryOptions, SessionHistorySnapshot } from './history';
+export { MASK_ATTR, REDACTED, scrubText, isSensitiveName, isMaskedElement, redactEvent, redactHistoryEvent, redactInput, redactFlow } from './redact';
 export { flowToPrompt, envVarFor } from './prompt';
 export type { PromptOptions } from './prompt';
 export * from './schemas';

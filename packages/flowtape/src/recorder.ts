@@ -1,6 +1,6 @@
-import { isMaskedElement, redactEvent, redactInput, scrubText } from './redact';
+import { isMaskedElement, redactEvent, redactHistoryEvent, scrubText } from './redact';
 import { FLOW_VERSION, slugify } from './schemas';
-import type { FlowDocument, FlowEvent, FlowMeta, InputEvent } from './types';
+import type { FlowDocument, FlowEvent, FlowMeta, HistoryEvent, InputEvent, NavigateEvent } from './types';
 
 /** Mark the overlay (or any dev tooling) with this so its clicks are not recorded. */
 export const UI_ATTR = 'data-flowtape-ui';
@@ -18,12 +18,6 @@ export interface Recorder {
   clear(): void;
   subscribe(listener: () => void): () => void;
   getSnapshot(): RecorderSnapshot;
-}
-
-export interface RecorderOptions {
-  /** Quiet time before a burst of typing becomes one input event. Default 400ms. */
-  debounceMs?: number;
-  now?: () => number;
 }
 
 const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role], [data-testid], [onclick], [tabindex]';
@@ -156,31 +150,58 @@ function targetOf(event: Event): Element | null {
   return event.target instanceof Element && !isUi(event.target) ? event.target : null;
 }
 
-export function createRecorder(options: RecorderOptions = {}): Recorder {
+/** Typing into the same field twice in a row keeps only the final value. */
+export function appendEvent<T extends HistoryEvent>(events: T[], event: T): T[] {
+  const last = events[events.length - 1];
+  const sameField = last?.type === 'input' && event.type === 'input' && last.selector === event.selector;
+  return sameField ? [...events.slice(0, -1), event] : [...events, event];
+}
+
+/** Shift an event's absolute `ts` (from `Capture.now`) to milliseconds since `origin`. */
+export function rebase<T extends HistoryEvent>(event: T, origin: number): T {
+  return { ...event, ts: Math.max(0, event.ts - origin) };
+}
+
+export interface Capture {
+  /**
+   * Receive every redacted event. `ts` is absolute (`now()`), so rebase it per consumer.
+   * DOM listeners attach on the first subscriber and detach after the last.
+   */
+  subscribe(listener: (event: HistoryEvent) => void): () => void;
+  /** Emit debounced typing now. */
+  flush(): void;
+  /** The current page as a navigate event, for a consumer that is just starting. */
+  page(): NavigateEvent;
+  now(): number;
+}
+
+export interface CaptureOptions {
+  /** Quiet time before a burst of typing becomes one input event. Default 400ms. */
+  debounceMs?: number;
+  now?: () => number;
+}
+
+/**
+ * One set of page listeners that any number of consumers (named recording, session history) share.
+ * Each DOM event is captured and redacted once, then fanned out.
+ */
+export function createCapture(options: CaptureOptions = {}): Capture {
   const debounceMs = options.debounceMs ?? 400;
   const now = options.now ?? (() => Date.now());
-  const listeners = new Set<() => void>();
-  let snapshot: RecorderSnapshot = { recording: false, events: [] };
-  let startedAt = 0;
+  const listeners = new Set<(event: HistoryEvent) => void>();
   let lastUrl = '';
   let pending: { el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement; timer: ReturnType<typeof setTimeout> } | null = null;
   let teardown: (() => void) | null = null;
 
-  const set = (next: Partial<RecorderSnapshot>) => {
-    snapshot = { ...snapshot, ...next };
-    listeners.forEach((listener) => listener());
+  const emit = (event: HistoryEvent) => {
+    const redacted = redactHistoryEvent(event);
+    listeners.forEach((listener) => listener(redacted));
   };
-  const elapsed = () => Math.max(0, now() - startedAt);
-  const push = (event: FlowEvent) => set({ events: [...snapshot.events, redactEvent(event)] });
 
-  // Typing into the same field twice in a row keeps only the final value.
-  const recordValue = (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) => {
-    const event = redactInput(inputEvent(el, elapsed()));
-    const events = snapshot.events;
-    const last = events[events.length - 1];
-    if (last?.type === 'input' && last.selector === event.selector) set({ events: [...events.slice(0, -1), event] });
-    else set({ events: [...events, event] });
-  };
+  // Pre-scrubbed so `page()` is safe to hand straight to a consumer.
+  const page = (): NavigateEvent => ({ type: 'navigate', ts: now(), url: scrubText(location.href), title: document.title ? scrubText(document.title) : undefined });
+
+  const recordValue = (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) => emit(inputEvent(el, now()));
 
   const flushInput = () => {
     if (!pending) return;
@@ -194,7 +215,7 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     if (location.href === lastUrl) return;
     lastUrl = location.href;
     flushInput();
-    push({ type: 'navigate', ts: elapsed(), url: location.href, title: document.title || undefined });
+    emit(page());
   };
 
   const onClick = (event: MouseEvent) => {
@@ -205,9 +226,9 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     if (isTextEntry(el) || (el instanceof HTMLLabelElement && el.control)) return;
     flushInput();
     const masked = isMaskedElement(el);
-    push({
+    emit({
       type: 'click',
-      ts: elapsed(),
+      ts: now(),
       selector: selectorFor(el),
       role: roleFor(el),
       name: masked ? undefined : nameFor(el),
@@ -240,62 +261,128 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     const form = targetOf(event);
     if (!(form instanceof HTMLFormElement)) return;
     flushInput();
-    push({
+    emit({
       type: 'submit',
-      ts: elapsed(),
+      ts: now(),
       selector: selectorFor(form),
       action: form.getAttribute('action') ?? undefined,
       method: (form.getAttribute('method') ?? 'get').toLowerCase(),
     });
   };
 
+  // Only the message, file, line and column. Stacks and error objects are never kept; redaction truncates the message.
+  const onError = (event: ErrorEvent) => {
+    emit({
+      type: 'error',
+      ts: now(),
+      kind: 'error',
+      message: (event.error instanceof Error ? event.error.message : event.message) || 'Unknown error',
+      source: event.filename || undefined,
+      line: event.lineno || undefined,
+      column: event.colno || undefined,
+    });
+  };
+
+  const onRejection = (event: PromiseRejectionEvent) => {
+    const { reason } = event;
+    emit({ type: 'error', ts: now(), kind: 'unhandledrejection', message: (reason instanceof Error ? reason.message : String(reason)) || 'Unknown error' });
+  };
+
   const attach = () => {
     const { pushState, replaceState } = history;
-    history.pushState = function (this: History, ...args: Parameters<History['pushState']>) {
+    let attached = true;
+    const patchedPush = function (this: History, ...args: Parameters<History['pushState']>) {
       pushState.apply(this, args);
-      checkUrl();
+      if (attached) checkUrl();
     };
-    history.replaceState = function (this: History, ...args: Parameters<History['replaceState']>) {
+    const patchedReplace = function (this: History, ...args: Parameters<History['replaceState']>) {
       replaceState.apply(this, args);
-      checkUrl();
+      if (attached) checkUrl();
     };
+    history.pushState = patchedPush;
+    history.replaceState = patchedReplace;
+    lastUrl = location.href;
     document.addEventListener('click', onClick, true);
     document.addEventListener('input', onInput, true);
     document.addEventListener('change', onChange, true);
     document.addEventListener('submit', onSubmit, true);
     window.addEventListener('popstate', checkUrl);
     window.addEventListener('hashchange', checkUrl);
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
     return () => {
-      history.pushState = pushState;
-      history.replaceState = replaceState;
+      attached = false;
+      // Leave someone else's later patch in place; ours is inert once detached.
+      if (history.pushState === patchedPush) history.pushState = pushState;
+      if (history.replaceState === patchedReplace) history.replaceState = replaceState;
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('input', onInput, true);
       document.removeEventListener('change', onChange, true);
       document.removeEventListener('submit', onSubmit, true);
       window.removeEventListener('popstate', checkUrl);
       window.removeEventListener('hashchange', checkUrl);
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
     };
+  };
+
+  return {
+    subscribe(listener) {
+      listeners.add(listener);
+      teardown ??= attach();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size > 0) return;
+        if (pending) clearTimeout(pending.timer);
+        pending = null;
+        teardown?.();
+        teardown = null;
+      };
+    },
+    flush: flushInput,
+    page,
+    now,
+  };
+}
+
+export interface RecorderOptions extends CaptureOptions {
+  /** Share page listeners with session history. Default: a private capture built from the other options. */
+  capture?: Capture;
+}
+
+/** Named flow recording. Accumulates events in memory until the overlay exports them. */
+export function createRecorder(options: RecorderOptions = {}): Recorder {
+  const capture = options.capture ?? createCapture(options);
+  const listeners = new Set<() => void>();
+  let snapshot: RecorderSnapshot = { recording: false, events: [] };
+  let startedAt = 0;
+  let unsubscribe: (() => void) | null = null;
+
+  const set = (next: Partial<RecorderSnapshot>) => {
+    snapshot = { ...snapshot, ...next };
+    listeners.forEach((listener) => listener());
+  };
+
+  const onEvent = (event: HistoryEvent) => {
+    if (event.type === 'error') return;
+    set({ events: appendEvent(snapshot.events, rebase(event, startedAt)) });
   };
 
   return {
     start() {
       if (snapshot.recording) return;
-      startedAt = now();
-      lastUrl = '';
-      set({ recording: true, events: [], startUrl: scrubText(location.href) });
-      teardown = attach();
-      checkUrl();
+      startedAt = capture.now();
+      set({ recording: true, events: [rebase(capture.page(), startedAt)], startUrl: scrubText(location.href) });
+      unsubscribe = capture.subscribe(onEvent);
     },
     stop() {
       if (!snapshot.recording) return;
-      flushInput();
-      teardown?.();
-      teardown = null;
+      capture.flush();
+      unsubscribe?.();
+      unsubscribe = null;
       set({ recording: false });
     },
     clear() {
-      if (pending) clearTimeout(pending.timer);
-      pending = null;
       set({ events: [], startUrl: undefined });
     },
     subscribe(listener) {

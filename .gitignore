@@ -9,5 +9,6 @@ blob-report/
 *.tgz
 .DS_Store
 .claude-task/
-# Flows and prompts under .flowtape/ are committed by design. Only scratch files are ignored.
-.flowtape/**/*.tmp
+# Flows and prompts under .flowtape/ are committed by design. Session history is personal and noisy.
+**/.flowtape/history/
+**/.flowtape/**/*.tmp

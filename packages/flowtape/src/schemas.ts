@@ -56,6 +56,35 @@ export const FlowEventSchema = z.discriminatedUnion('type', [
   SubmitEventSchema,
 ]);
 
+/** Uncaught error or unhandled rejection. Session history only; named flows never contain these. */
+export const PageErrorEventSchema = z.object({
+  type: z.literal('error'),
+  ts,
+  kind: z.enum(['error', 'unhandledrejection']),
+  message: z.string(),
+  source: z.string().optional(),
+  line: z.number().int().nonnegative().optional(),
+  column: z.number().int().nonnegative().optional(),
+});
+
+/** Everything the page capture emits: flow events plus page errors. */
+export const HistoryEventSchema = z.discriminatedUnion('type', [
+  NavigateEventSchema,
+  ClickEventSchema,
+  InputEventSchema,
+  SubmitEventSchema,
+  PageErrorEventSchema,
+]);
+
+/** A redacted input must never carry its value. */
+function refineRedactedInputs(events: Array<{ type: string; redacted?: boolean; value?: string | null }>, ctx: z.RefinementCtx) {
+  events.forEach((event, index) => {
+    if (event.type === 'input' && event.redacted && event.value !== null) {
+      ctx.addIssue({ code: 'custom', path: ['events', index, 'value'], message: 'Redacted inputs must not carry a value' });
+    }
+  });
+}
+
 export const FlowMetaSchema = z.object({
   userAgent: z.string().optional(),
   viewport: z.object({ width: z.number(), height: z.number() }).optional(),
@@ -73,13 +102,7 @@ export const FlowDocumentSchema = z
     events: z.array(FlowEventSchema),
     meta: FlowMetaSchema.optional(),
   })
-  .superRefine((doc, ctx) => {
-    doc.events.forEach((event, index) => {
-      if (event.type === 'input' && event.redacted && event.value !== null) {
-        ctx.addIssue({ code: 'custom', path: ['events', index, 'value'], message: 'Redacted inputs must not carry a value' });
-      }
-    });
-  });
+  .superRefine((doc, ctx) => refineRedactedInputs(doc.events, ctx));
 
 /** Response of `POST /__flowtape/flows`. */
 export const SavedFlowSchema = z.object({
@@ -87,6 +110,36 @@ export const SavedFlowSchema = z.object({
   flowFile: z.string(),
   promptFile: z.string(),
   prompt: z.string(),
+});
+
+/** Short random id for one browser session. Doubles as part of the file name. */
+export const SESSION_ID_PATTERN = /^[a-z0-9]{6,32}$/;
+
+/** Body of `POST /__flowtape/history`. `ts` on each event is milliseconds since `startedAt`. */
+export const HistoryBatchSchema = z
+  .object({
+    sessionId: z.string().regex(SESSION_ID_PATTERN),
+    startedAt: z.iso.datetime(),
+    startUrl: z.string().optional(),
+    meta: FlowMetaSchema.optional(),
+    events: z.array(HistoryEventSchema).max(1000),
+  })
+  .superRefine((batch, ctx) => refineRedactedInputs(batch.events, ctx));
+
+/** First line of every `.flowtape/history/*.jsonl` file. Every later line is one HistoryEvent. */
+export const HistorySessionLineSchema = z.object({
+  type: z.literal('session'),
+  version: z.literal(FLOW_VERSION),
+  sessionId: z.string().regex(SESSION_ID_PATTERN),
+  startedAt: z.iso.datetime(),
+  startUrl: z.string().optional(),
+  meta: FlowMetaSchema.optional(),
+});
+
+/** Response of `POST /__flowtape/history`. */
+export const HistoryAppendResultSchema = z.object({
+  file: z.string(),
+  appended: z.number().int().nonnegative(),
 });
 
 /** Turn a human flow name into a file-safe slug. Falls back to `flow`. */

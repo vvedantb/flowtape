@@ -1,4 +1,4 @@
-import type { FlowDocument, FlowEvent, InputEvent } from './types';
+import type { FlowDocument, FlowEvent, HistoryEvent, InputEvent } from './types';
 
 /** Put this on any element (or ancestor) whose value must never be stored. */
 export const MASK_ATTR = 'data-flowtape-mask';
@@ -83,6 +83,14 @@ export function redactEvent(event: FlowEvent): FlowEvent {
     case 'submit':
       return { ...event, selector: scrubOptional(event.selector), action: scrubOptional(event.action), method: scrubOptional(event.method) };
   }
+}
+
+const MAX_ERROR_MESSAGE = 500;
+
+/** Scrub a session history event. Error messages are scrubbed and truncated; stacks are never kept. */
+export function redactHistoryEvent(event: HistoryEvent): HistoryEvent {
+  if (event.type !== 'error') return redactEvent(event);
+  return { ...event, message: scrubText(event.message).slice(0, MAX_ERROR_MESSAGE), source: scrubOptional(event.source) };
 }
 
 /** Scrub a whole flow. Safe to run more than once. */
