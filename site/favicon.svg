@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- The .wordmark-mark from index.html: a filled circle in the foreground colour. -->
+  <style>
+    circle { fill: #181818; } /* light foreground, oklch(21.03% 0 0) */
+    @media (prefers-color-scheme: dark) { circle { fill: #fcfcfc; } } /* dark foreground, oklch(99.11% 0 0) */
+  </style>
+  <circle cx="8" cy="8" r="8"/>
+</svg>
