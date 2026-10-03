@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>flowtape — record a flow, replay it with an agent</title>
+<meta name="description" content="flowtape is a dev-only overlay for Vite + React apps. Record a user journey, export it as JSON and a Claude Code prompt, and replay it in a real browser.">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+:root {
+  color-scheme: light;
+  --background: oklch(97.02% 0 0);
+  --foreground: oklch(21.03% 0 0);
+  --muted: oklch(48% 0 0);
+  --surface: oklch(100% 0 0);
+  --separator: oklch(90% 0 0);
+  --focus-ring: color-mix(in oklch, var(--foreground) 40%, transparent);
+  --sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --background: oklch(12% 0 0);
+    --foreground: oklch(99.11% 0 0);
+    --muted: oklch(72% 0 0);
+    --surface: oklch(19% 0 0);
+    --separator: oklch(26% 0 0);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+a { color: inherit; }
+code, pre, kbd { font-family: var(--mono); }
+:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip {
+  position: absolute; left: 1rem; top: -3rem; z-index: 50;
+  padding: 0.5rem 0.875rem; border-radius: 0.5rem;
+  background: var(--foreground); color: var(--background);
+  font-size: 0.875rem; text-decoration: none;
+}
+.skip:focus { top: 0.75rem; }
+
+.shell {
+  position: relative;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+@media (min-width: 640px) { .shell { padding: 0 2rem; } }
+@media (min-width: 1024px) { .shell { padding: 0 2.5rem; } }
+
+/* Nav */
+.nav {
+  position: sticky; top: 0; z-index: 30;
+  border-bottom: 1px solid var(--separator);
+  background: color-mix(in oklch, var(--background) 80%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.nav .shell {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  height: 3.5rem;
+}
+@media (min-width: 640px) { .nav .shell { height: 4rem; } }
+.wordmark {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em;
+  text-decoration: none;
+}
+.wordmark-mark {
+  width: 0.5rem; height: 0.5rem; border-radius: 999px;
+  background: var(--foreground);
+}
+.nav-links { display: flex; align-items: center; gap: 0.25rem; }
+.nav-links a {
+  display: inline-flex; align-items: center; height: 2.5rem;
+  padding: 0 0.75rem; border-radius: 0.5rem;
+  font-size: 0.875rem; color: var(--muted); text-decoration: none;
+  transition: color 150ms, background-color 150ms;
+}
+.nav-links a:hover {
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+/* Atmosphere */
+.atmosphere {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(ellipse 90% 55% at 50% -12%, color-mix(in oklch, var(--foreground) 8%, transparent), transparent 58%),
+    radial-gradient(ellipse 45% 35% at 100% 100%, color-mix(in oklch, var(--foreground) 4%, transparent), transparent 55%),
+    linear-gradient(color-mix(in oklch, var(--foreground) 5.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 5.5%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 56px 56px, 56px 56px;
+}
+.grain::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+}
+.scrim {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 72% 58% at 50% 42%, var(--background) 0%, color-mix(in oklch, var(--background) 82%, transparent) 46%, transparent 74%);
+}
+@media (max-width: 1023px) {
+  .scrim {
+    background: radial-gradient(ellipse 90% 70% at 50% 28%, var(--background) 0%, color-mix(in oklch, var(--background) 88%, transparent) 52%, transparent 78%);
+  }
+}
+
+/* Hero */
+.hero { padding: 3rem 0 4rem; position: relative; z-index: 1; }
+@media (min-width: 640px) { .hero { padding: 5rem 0 5rem; } }
+@media (min-width: 1024px) { .hero { padding: 6rem 0 6rem; } }
+.hero-inner { max-width: 48rem; margin: 0 auto; text-align: center; }
+.badge {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  margin: 0 0 1.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--separator); border-radius: 999px;
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  font-size: 0.75rem; color: var(--muted);
+}
+.pulse-dot {
+  width: 0.375rem; height: 0.375rem; border-radius: 999px;
+  background: var(--foreground);
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.45; box-shadow: 0 0 0 0 color-mix(in oklch, var(--foreground) 35%, transparent); }
+  50% { opacity: 1; box-shadow: 0 0 0 6px color-mix(in oklch, var(--foreground) 0%, transparent); }
+}
+h1, h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  text-wrap: balance;
+  margin: 0;
+}
+h1 {
+  font-size: 2.6rem;
+  line-height: 1;
+  letter-spacing: -0.025em;
+}
+@media (min-width: 400px) { h1 { font-size: 3.1rem; } }
+@media (min-width: 640px) { h1 { font-size: 3.9rem; } }
+@media (min-width: 1024px) { h1 { font-size: 4.85rem; } }
+h1 em, h2 em { font-style: italic; color: color-mix(in oklch, var(--foreground) 85%, transparent); }
+.lede {
+  max-width: 36rem; margin: 1.25rem auto 0;
+  font-size: 0.9375rem; line-height: 1.65; color: var(--muted);
+  text-wrap: pretty;
+}
+@media (min-width: 640px) { .lede { margin-top: 1.5rem; font-size: 1.125rem; } }
+.cta {
+  display: flex; flex-direction: column; align-items: stretch; justify-content: center;
+  gap: 0.625rem; margin-top: 1.75rem;
+}
+@media (min-width: 640px) { .cta { flex-direction: row; align-items: center; gap: 0.75rem; margin-top: 2.25rem; } }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  height: 2.75rem; padding: 0 1.25rem;
+  border-radius: 0.5rem; border: 1px solid transparent;
+  font: 500 0.9375rem/1 var(--sans);
+  text-decoration: none; cursor: pointer;
+  transition: background-color 150ms, border-color 150ms, opacity 150ms, transform 150ms;
+}
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--foreground); color: var(--background); }
+.btn-primary:hover { opacity: 0.88; }
+.btn-outline {
+  background: transparent; color: var(--foreground);
+  border-color: var(--separator);
+}
+.btn-outline:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); }
+.cmd { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; }
+.cmd .prompt { color: var(--muted); }
+.copy-icon { width: 15px; height: 15px; flex: none; color: var(--muted); }
+.pills {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem;
+  list-style: none; margin: 2rem 0 0; padding: 0;
+}
+@media (min-width: 640px) { .pills { margin-top: 2.5rem; } }
+.pill {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--separator); border-radius: 999px;
+  background: color-mix(in oklch, var(--surface) 60%, transparent);
+  font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--muted);
+}
+
+/* Load fade-up */
+.rise { animation: rise 700ms var(--ease) both; }
+.rise-1 { animation-delay: 80ms; }
+.rise-2 { animation-delay: 180ms; }
+.rise-3 { animation-delay: 280ms; }
+.rise-4 { animation-delay: 380ms; }
+.rise-5 { animation-delay: 480ms; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Sections */
+.section {
+  border-top: 1px solid var(--separator);
+  padding: 5rem 0;
+  scroll-margin-top: 4rem;
+}
+@media (min-width: 640px) { .section { padding: 7rem 0; } }
+@media (min-width: 1024px) { .section { padding: 8rem 0; } }
+.heading { max-width: 42rem; }
+.eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 11px; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.22em; color: var(--muted);
+}
+@media (min-width: 640px) { .eyebrow { font-size: 12px; letter-spacing: 0.28em; } }
+h2 { font-size: 2.25rem; line-height: 1.05; letter-spacing: -0.02em; }
+@media (min-width: 640px) { h2 { font-size: 3.25rem; } }
+.intro {
+  max-width: 36rem; margin: 1rem 0 0;
+  font-size: 0.9375rem; line-height: 1.65; color: var(--muted); text-wrap: pretty;
+}
+@media (min-width: 640px) { .intro { margin-top: 1.25rem; font-size: 1rem; } }
+.intro code, .cell code, .card code, li code, td code, .note code {
+  font-size: 0.85em;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.3125rem;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+/* Lattice: shared hairlines through 1px gaps */
+.lattice {
+  display: grid; gap: 1px; margin-top: 2.5rem;
+  background: var(--separator);
+  border: 1px solid var(--separator); border-radius: 0.75rem;
+  overflow: hidden;
+}
+@media (min-width: 640px) { .lattice-2 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 768px) { .lattice-3 { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 640px) { .lattice-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .lattice-4 { grid-template-columns: repeat(4, 1fr); } }
+.cell { background: var(--background); padding: 1.5rem; }
+@media (min-width: 640px) { .cell { padding: 1.75rem; } }
+.index { margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.28em; color: var(--muted); }
+.cell-title { margin: 0.75rem 0 0; font-size: 1rem; font-weight: 500; }
+.cell-body { margin: 0.375rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--separator); border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+@media (min-width: 640px) { .card { padding: 1.75rem; } }
+.card h3 { margin: 0; font-size: 1rem; font-weight: 500; }
+.card p { margin: 0.375rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--muted); }
+
+.split { display: grid; gap: 1rem; margin-top: 3rem; }
+@media (min-width: 1024px) { .split { grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: start; } }
+
+/* File mock / code */
+.file {
+  background: var(--surface);
+  border: 1px solid var(--separator); border-radius: 0.75rem;
+  overflow: hidden; min-width: 0;
+}
+.file-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--separator);
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.file-bar span { overflow-wrap: anywhere; }
+.file-tag {
+  flex: none; padding: 0.0625rem 0.5rem;
+  border: 1px solid var(--separator); border-radius: 999px;
+  font-family: var(--sans); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+pre {
+  margin: 0; padding: 1rem 1.125rem;
+  overflow-x: auto;
+  font-size: 0.8125rem; line-height: 1.7;
+  tab-size: 2;
+}
+pre code { white-space: pre; }
+.c { color: var(--muted); }
+.md-h { font-weight: 600; }
+.md-dim { color: var(--muted); }
+
+/* Comparison table */
+.table-wrap {
+  margin-top: 0; overflow-x: auto;
+  border: 1px solid var(--separator); border-radius: 0.75rem;
+  background: var(--surface);
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; min-width: 30rem; }
+caption { text-align: left; padding: 0.875rem 1.125rem; font-size: 11px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--separator); }
+th, td { padding: 0.75rem 1.125rem; text-align: left; vertical-align: top; border-top: 1px solid var(--separator); }
+thead th { border-top: 0; font-weight: 500; font-size: 0.8125rem; }
+tbody th { font-weight: 500; color: var(--muted); width: 18%; }
+td { color: var(--foreground); }
+
+.stack { display: grid; gap: 1rem; min-width: 0; }
+
+/* Lists */
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.list li {
+  padding: 1rem 0; border-top: 1px solid var(--separator);
+  font-size: 0.9375rem; line-height: 1.6; color: var(--muted);
+}
+.list li:first-child { border-top: 0; padding-top: 0; }
+.list strong { color: var(--foreground); font-weight: 500; }
+.note { margin: 1rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--muted); }
+
+.reset { list-style: none; padding: 0; margin-bottom: 0; }
+.fig { margin: 0; }
+.pills-left { justify-content: flex-start; margin-top: 1.5rem; }
+
+/* Setup */
+.steps { display: grid; gap: 1.25rem; margin-top: 2.5rem; counter-reset: step; }
+@media (min-width: 1024px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+.step { display: grid; gap: 0.75rem; align-content: start; min-width: 0; }
+.step-label { margin: 0; font-size: 0.875rem; color: var(--muted); }
+.step-label strong { color: var(--foreground); font-weight: 500; }
+.copy-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.25rem 0.5rem; border-radius: 0.375rem;
+  border: 1px solid var(--separator); background: transparent;
+  font: 500 11px/1 var(--sans); color: var(--muted); cursor: pointer;
+}
+.copy-btn:hover { color: var(--foreground); }
+
+/* Footer */
+.footer { border-top: 1px solid var(--separator); }
+.footer .shell {
+  display: flex; flex-direction: column; gap: 1.5rem;
+  padding-top: 2.5rem; padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+}
+@media (min-width: 640px) { .footer .shell { flex-direction: row; align-items: center; justify-content: space-between; } }
+.footer p { margin: 0.75rem 0 0; max-width: 24rem; font-size: 0.75rem; line-height: 1.6; color: var(--muted); }
+.footer nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.footer nav a { font-size: 0.875rem; color: var(--muted); text-decoration: none; padding: 0.25rem 0; }
+.footer nav a:hover { color: var(--foreground); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="shell">
+    <a class="wordmark" href="#top" aria-label="flowtape home"><span class="wordmark-mark" aria-hidden="true"></span>flowtape</a>
+    <nav class="nav-links" aria-label="External">
+      <a href="https://github.com/vvedantb/flowtape" rel="noreferrer">GitHub</a>
+      <a href="https://www.npmjs.com/package/@vedantb/flowtape" rel="noreferrer">npm</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section id="top" class="atmosphere grain" aria-labelledby="hero-title">
+    <div class="scrim" aria-hidden="true"></div>
+    <div class="shell hero">
+      <div class="hero-inner">
+        <p class="badge rise"><span class="pulse-dot" aria-hidden="true"></span>Flow recorder for Vite + React</p>
+        <h1 id="hero-title" class="rise rise-1">Record a flow. Replay it with <em>an agent.</em></h1>
+        <p class="lede rise rise-2">A small dev-only overlay for your Vite + React app. Click Record, use the app, then export the journey as JSON and a Claude Code prompt you can commit and replay in a real browser.</p>
+        <div class="cta rise rise-3">
+          <a class="btn btn-primary" href="https://github.com/vvedantb/flowtape" rel="noreferrer">View on GitHub</a>
+          <button class="btn btn-outline" type="button" data-copy="npm install -D @vedantb/flowtape" aria-label="Copy install command: npm install -D @vedantb/flowtape">
+            <span class="cmd"><span class="prompt" aria-hidden="true">$ </span>npm install -D @vedantb/flowtape</span>
+            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+          </button>
+        </div>
+        <ul class="pills rise rise-4" aria-label="Capabilities">
+          <li class="pill">record</li>
+          <li class="pill">export</li>
+          <li class="pill">prompts/&lt;slug&gt;.md</li>
+          <li class="pill">session history</li>
+          <li class="pill">redaction</li>
+          <li class="pill">local-first</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="section" aria-labelledby="how-title">
+    <div class="shell">
+      <div class="heading">
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-title">Record, export, then <em>replay</em></h2>
+        <p class="intro">flowtape records the journey inside your running app. There is no browser extension and nothing to script by hand.</p>
+      </div>
+
+      <ol class="lattice lattice-4 reset">
+        <li class="cell">
+          <p class="index">01</p>
+          <p class="cell-title">Record</p>
+          <p class="cell-body">Click Record in the overlay. flowtape logs the current page, then every click, field value, form submit and client-side navigation.</p>
+        </li>
+        <li class="cell">
+          <p class="index">02</p>
+          <p class="cell-title">Stop and name</p>
+          <p class="cell-body">Click Stop and type a name, such as <code>Login and add note</code>. The name becomes the file slug.</p>
+        </li>
+        <li class="cell">
+          <p class="index">03</p>
+          <p class="cell-title">Export</p>
+          <p class="cell-body">flowtape writes <code>flows/&lt;slug&gt;.json</code>, a FlowDocument validated with Zod, and <code>prompts/&lt;slug&gt;.md</code>, a Claude Code prompt.</p>
+        </li>
+        <li class="cell">
+          <p class="index">04</p>
+          <p class="cell-title">Replay with Claude Code</p>
+          <p class="cell-body">Start your dev server, give Claude Code a browser tool such as Playwright MCP, and hand it the prompt.</p>
+        </li>
+      </ol>
+
+      <div class="split">
+        <figure class="file fig">
+          <div class="file-bar"><span>.flowtape/prompts/login-and-add-note.md</span><span class="file-tag">Excerpt</span></div>
+<pre><code><span class="md-h"># Flow: Login and add note</span>
+
+<span class="md-h">## Goal</span>
+<span class="md-dim">Replay the recorded journey in a real browser
+and confirm each step works as recorded.</span>
+
+<span class="md-h">## Preconditions</span>
+<span class="md-dim">- Redacted fields read their values from
+  environment variables: `FLOWTAPE_PASSWORD`.</span>
+
+<span class="md-h">## Steps</span>
+<span class="md-dim">1. Open `/`.
+2. Type `ada@example.test` into the field "Email".
+3. Fill the password field with `$FLOWTAPE_PASSWORD`.</span>
+
+<span class="md-h">## Assertions</span>
+<span class="md-h">## Fuzz hints</span>
+<span class="md-h">## Out of bounds</span>
+<span class="md-h">## Report back</span></code></pre>
+          <figcaption class="sr-only">Excerpt from the sample prompt committed in the flowtape demo app.</figcaption>
+        </figure>
+
+        <div class="stack">
+          <div class="card">
+            <h3>Commit flows and prompts</h3>
+            <p>Flows and prompts are meant to be committed. They act as living, reviewable test journeys. Export under the same name to overwrite them.</p>
+          </div>
+          <div class="card">
+            <h3>Fill in the TODOs</h3>
+            <p>Assertions and fuzz hints are heuristics. Fill in the <code>TODO</code> lines, such as seed data and final-state checks, before you rely on them.</p>
+          </div>
+          <div class="file">
+            <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy='claude "Follow @.flowtape/prompts/login-and-add-note.md against the running app"' aria-label="Copy replay command">Copy</button></div>
+<pre><code><span class="c"># Interactive</span>
+claude "Follow @.flowtape/prompts/login-and-add-note.md against the running app"
+
+<span class="c"># Headless</span>
+claude -p "$(cat .flowtape/prompts/login-and-add-note.md)"</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="history" class="section" aria-labelledby="history-title">
+    <div class="shell">
+      <div class="heading">
+        <p class="eyebrow">Session history</p>
+        <h2 id="history-title">A quiet log of <em>what you did</em></h2>
+        <p class="intro">In development, flowtape keeps an always-on, redacted log for each browser tab. It records navigations, clicks, field values (type-only for masked fields), form submits, and uncaught errors and unhandled rejections. Error lines keep a scrubbed message, never a stack.</p>
+      </div>
+
+      <div class="split">
+        <div class="stack">
+          <div class="table-wrap">
+            <table>
+              <caption>Record flow vs session history</caption>
+              <thead>
+                <tr><td></td><th scope="col">Record flow</th><th scope="col">Session history</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Starts</th><td>When you click Record</td><td>Automatically in development</td></tr>
+                <tr><th scope="row">Ends</th><td>When you click Stop</td><td>When you switch it off or close the tab</td></tr>
+                <tr><th scope="row">Output</th><td><code>flows/&lt;slug&gt;.json</code> and <code>prompts/&lt;slug&gt;.md</code></td><td><code>history/&lt;date&gt;-&lt;sessionId&gt;.jsonl</code></td></tr>
+                <tr><th scope="row">Git</th><td>Committed</td><td>Ignored</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="file">
+            <div class="file-bar"><span>.gitignore</span></div>
+<pre><code>**/.flowtape/history/</code></pre>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <h3>Toggle it in the overlay</h3>
+            <p>Use the Session history switch at the bottom of the overlay. While it is on, the overlay shows the session id, event count and file path. The choice survives reloads.</p>
+          </div>
+          <div class="card">
+            <h3>One file per tab</h3>
+            <p>Reloading appends to the same file. A new tab starts a new one. History is never turned into a named flow; use Record for that.</p>
+          </div>
+          <div class="file">
+            <div class="file-bar"><span>Terminal</span></div>
+<pre><code><span class="c"># Ask Claude Code to review it</span>
+claude "Read the latest files in .flowtape/history/ and summarise what I did in the app and any errors I hit"
+
+<span class="c"># List history files, newest first</span>
+npx flowtape history</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="redaction" class="section" aria-labelledby="redaction-title">
+    <div class="shell">
+      <div class="heading">
+        <p class="eyebrow">Redaction and local-first</p>
+        <h2 id="redaction-title">Secrets are scrubbed <em>three times</em></h2>
+        <p class="intro">Redaction runs in the browser as events are recorded, on the server before files are written, and over the final Markdown. Session history gets the first two.</p>
+      </div>
+
+      <ol class="lattice lattice-3 reset">
+        <li class="cell">
+          <p class="index">01</p>
+          <p class="cell-title">In the browser</p>
+          <p class="cell-body">Values are redacted as each event is captured, before anything leaves the page.</p>
+        </li>
+        <li class="cell">
+          <p class="index">02</p>
+          <p class="cell-title">On the server</p>
+          <p class="cell-body">The dev middleware validates and redacts again before it writes a flow or appends to history.</p>
+        </li>
+        <li class="cell">
+          <p class="index">03</p>
+          <p class="cell-title">Over the prompt</p>
+          <p class="cell-body">The final Markdown is scrubbed once more before it is saved.</p>
+        </li>
+      </ol>
+
+      <div class="split">
+        <div class="card">
+          <ul class="list">
+            <li><strong>Password fields</strong> never store a value. The event keeps only that it was redacted and the value's length.</li>
+            <li><strong><code>data-flowtape-mask</code></strong> on a field or any ancestor records every field inside type-only.</li>
+            <li><strong>Secret-looking field names</strong>, such as token, API key, OTP or card number, are masked automatically.</li>
+            <li><strong>Pattern scrub</strong> replaces secret shapes in every stored string, such as bearer tokens, JWTs, API keys and PEM private keys, with <code>[REDACTED]</code>.</li>
+          </ul>
+          <p class="note">The pattern scrub is a safety net, not a guarantee. Mask sensitive fields explicitly and review a flow before you commit it.</p>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <h3>Test credentials, by name</h3>
+            <p>Redacted fields name an environment variable, such as <code>$FLOWTAPE_PASSWORD</code>. Set it to a test credential in the shell that runs Claude Code. The prompt tells the agent never to print, log or screenshot it.</p>
+          </div>
+          <div class="card">
+            <h3>Everything stays on your machine</h3>
+            <p>The middleware serves <code>/__flowtape/*</code> during <code>vite dev</code> only. The overlay renders only outside production builds.</p>
+            <ul class="pills pills-left" aria-label="What flowtape does not use">
+              <li class="pill">no account</li>
+              <li class="pill">no cloud</li>
+              <li class="pill">no extension</li>
+              <li class="pill">no network capture</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup" class="section" aria-labelledby="setup-title">
+    <div class="shell">
+      <div class="heading">
+        <p class="eyebrow">Setup</p>
+        <h2 id="setup-title">Three steps into <em>any Vite app</em></h2>
+        <p class="intro">To keep the overlay out of your production bundle entirely, render it behind <code>import.meta.env.DEV</code>.</p>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <p class="step-label"><strong>1.</strong> Install the package.</p>
+          <div class="file">
+            <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy="npm install -D @vedantb/flowtape" aria-label="Copy install command">Copy</button></div>
+<pre><code>npm install -D @vedantb/flowtape</code></pre>
+          </div>
+        </div>
+        <div class="step">
+          <p class="step-label"><strong>2.</strong> Add the plugin.</p>
+          <div class="file">
+            <div class="file-bar"><span>vite.config.ts</span></div>
+<pre><code>import react from '@vitejs/plugin-react';
+import { flowtape } from '@vedantb/flowtape/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [flowtape(), react()],
+});</code></pre>
+          </div>
+        </div>
+        <div class="step">
+          <p class="step-label"><strong>3.</strong> Mount the overlay once.</p>
+          <div class="file">
+            <div class="file-bar"><span>main.tsx</span></div>
+<pre><code>import { FlowtapeOverlay } from '@vedantb/flowtape';
+
+createRoot(root).render(
+  &lt;&gt;
+    &lt;App /&gt;
+    &lt;FlowtapeOverlay /&gt;
+  &lt;/&gt;,
+);</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell">
+    <div>
+      <a class="wordmark" href="#top"><span class="wordmark-mark" aria-hidden="true"></span>flowtape</a>
+      <p>Record user journeys in Vite + React and replay them with Claude Code. Local-first, dev-only.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://github.com/vvedantb/flowtape" rel="noreferrer">GitHub</a>
+      <a href="https://www.npmjs.com/package/@vedantb/flowtape" rel="noreferrer">npm</a>
+    </nav>
+  </div>
+</footer>
+
+<p class="sr-only" role="status" aria-live="polite" id="copy-status"></p>
+
+<script>
+(function () {
+  var status = document.getElementById('copy-status');
+  function fallback(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    return ok ? Promise.resolve() : Promise.reject();
+  }
+  function copy(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(function () { return fallback(text); });
+    }
+    return fallback(text);
+  }
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var label = btn.classList.contains('copy-btn') ? btn : null;
+      copy(btn.getAttribute('data-copy')).then(function () {
+        status.textContent = 'Copied to clipboard';
+        if (label) { label.textContent = 'Copied'; setTimeout(function () { label.textContent = 'Copy'; }, 1600); }
+      }, function () {
+        status.textContent = 'Copy failed. Select the text and copy it manually.';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
