@@ -1,4 +1,4 @@
-import { FlowtapeOverlay } from '@vvv/flowtape';
+import { FlowtapeOverlay } from '@vvedantb/flowtape';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';

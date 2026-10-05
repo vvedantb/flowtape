@@ -10,11 +10,11 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "npm run build -w @vvv/flowtape && npm run build -w flowtape-vite-demo",
-    "test": "npm test -w @vvv/flowtape",
-    "test:e2e": "npm run build -w @vvv/flowtape && playwright test",
-    "dev": "npm run build -w @vvv/flowtape && npm run dev -w flowtape-vite-demo",
-    "typecheck": "npm run typecheck -w @vvv/flowtape && npm run typecheck -w flowtape-vite-demo && tsc -p e2e --noEmit",
+    "build": "npm run build -w @vvedantb/flowtape && npm run build -w flowtape-vite-demo",
+    "test": "npm test -w @vvedantb/flowtape",
+    "test:e2e": "npm run build -w @vvedantb/flowtape && playwright test",
+    "dev": "npm run build -w @vvedantb/flowtape && npm run dev -w flowtape-vite-demo",
+    "typecheck": "npm run typecheck -w @vvedantb/flowtape && npm run typecheck -w flowtape-vite-demo && tsc -p e2e --noEmit",
     "history": "flowtape history examples/vite-demo"
   },
   "devDependencies": {
