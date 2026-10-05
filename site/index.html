@@ -394,7 +394,7 @@ td { color: var(--foreground); }
     <a class="wordmark" href="#top" aria-label="flowtape home"><span class="wordmark-mark" aria-hidden="true"></span>flowtape</a>
     <nav class="nav-links" aria-label="External">
       <a href="https://github.com/vvedantb/flowtape" rel="noreferrer">GitHub</a>
-      <a href="https://www.npmjs.com/package/@vedantb/flowtape" rel="noreferrer">npm</a>
+      <a href="https://www.npmjs.com/package/@vvv/flowtape" rel="noreferrer">npm</a>
     </nav>
   </div>
 </header>
@@ -409,8 +409,8 @@ td { color: var(--foreground); }
         <p class="lede rise rise-2">A small dev-only overlay for your Vite + React app. Click Record, use the app, then export the journey as JSON and a Claude Code prompt you can commit and replay in a real browser.</p>
         <div class="cta rise rise-3">
           <a class="btn btn-primary" href="https://github.com/vvedantb/flowtape" rel="noreferrer">View on GitHub</a>
-          <button class="btn btn-outline" type="button" data-copy="npm install -D @vedantb/flowtape" aria-label="Copy install command: npm install -D @vedantb/flowtape">
-            <span class="cmd"><span class="prompt" aria-hidden="true">$ </span>npm install -D @vedantb/flowtape</span>
+          <button class="btn btn-outline" type="button" data-copy="npm install -D @vvv/flowtape" aria-label="Copy install command: npm install -D @vvv/flowtape">
+            <span class="cmd"><span class="prompt" aria-hidden="true">$ </span>npm install -D @vvv/flowtape</span>
             <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
           </button>
         </div>
@@ -549,7 +549,7 @@ claude -p "$(cat .flowtape/prompts/login-and-add-note.md)"</code></pre>
 claude "Read the latest files in .flowtape/history/ and summarise what I did in the app and any errors I hit"
 
 <span class="c"># List history files, newest first</span>
-npx flowtape history</code></pre>
+npx @vvv/flowtape history</code></pre>
           </div>
         </div>
       </div>
@@ -624,8 +624,8 @@ npx flowtape history</code></pre>
         <div class="step">
           <p class="step-label"><strong>1.</strong> Install the package.</p>
           <div class="file">
-            <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy="npm install -D @vedantb/flowtape" aria-label="Copy install command">Copy</button></div>
-<pre><code>npm install -D @vedantb/flowtape</code></pre>
+            <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy="npm install -D @vvv/flowtape" aria-label="Copy install command">Copy</button></div>
+<pre><code>npm install -D @vvv/flowtape</code></pre>
           </div>
         </div>
         <div class="step">
@@ -633,7 +633,7 @@ npx flowtape history</code></pre>
           <div class="file">
             <div class="file-bar"><span>vite.config.ts</span></div>
 <pre><code>import react from '@vitejs/plugin-react';
-import { flowtape } from '@vedantb/flowtape/vite';
+import { flowtape } from '@vvv/flowtape/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -645,7 +645,7 @@ export default defineConfig({
           <p class="step-label"><strong>3.</strong> Mount the overlay once.</p>
           <div class="file">
             <div class="file-bar"><span>main.tsx</span></div>
-<pre><code>import { FlowtapeOverlay } from '@vedantb/flowtape';
+<pre><code>import { FlowtapeOverlay } from '@vvv/flowtape';
 
 createRoot(root).render(
   &lt;&gt;
@@ -668,7 +668,7 @@ createRoot(root).render(
     </div>
     <nav aria-label="Footer">
       <a href="https://github.com/vvedantb/flowtape" rel="noreferrer">GitHub</a>
-      <a href="https://www.npmjs.com/package/@vedantb/flowtape" rel="noreferrer">npm</a>
+      <a href="https://www.npmjs.com/package/@vvv/flowtape" rel="noreferrer">npm</a>
     </nav>
   </div>
 </footer>

@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react';
-import { flowtape } from '@vedantb/flowtape/vite';
+import { flowtape } from '@vvv/flowtape/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
