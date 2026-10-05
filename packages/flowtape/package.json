@@ -1,5 +1,5 @@
 {
-  "name": "@vedantb/flowtape",
+  "name": "@vvv/flowtape",
   "version": "0.1.0",
   "description": "Record user flows in your running Vite app and export them as Claude Code prompts.",
   "type": "module",

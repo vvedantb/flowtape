@@ -5,7 +5,7 @@ flowtape records a user journey in your running Vite + React app and turns it in
 ## Add it to a Vite app
 
 ```sh
-npm install -D @vedantb/flowtape
+npm install -D @vvv/flowtape
 ```
 
 Add the plugin. It serves `/__flowtape/*` during `vite dev` only.
@@ -13,7 +13,7 @@ Add the plugin. It serves `/__flowtape/*` during `vite dev` only.
 ```ts
 // vite.config.ts
 import react from '@vitejs/plugin-react';
-import { flowtape } from '@vedantb/flowtape/vite';
+import { flowtape } from '@vvv/flowtape/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -24,7 +24,7 @@ export default defineConfig({
 Mount the overlay once, next to your app.
 
 ```tsx
-import { FlowtapeOverlay } from '@vedantb/flowtape';
+import { FlowtapeOverlay } from '@vvv/flowtape';
 
 createRoot(root).render(
   <>
@@ -84,8 +84,8 @@ claude "Read the latest files in .flowtape/history/ and summarise what I did in 
 **List it from the terminal:**
 
 ```sh
-npx flowtape history            # nearest .flowtape/history/ at or above the current folder
-npx flowtape history ./my-app   # or start from another folder
+npx @vvv/flowtape history            # nearest .flowtape/history/ at or above the current folder
+npx @vvv/flowtape history ./my-app   # or start from another folder
 npm run history                 # in this repo: the demo's history
 ```
 

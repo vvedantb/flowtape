@@ -6,9 +6,9 @@ import { demoRoot, historyFile, removeHistory, waitForHistory } from './history'
 
 const repoRoot = path.resolve(demoRoot, '../..');
 
-/** Run the built `flowtape` bin the way a user would, from the repo root. */
+/** Run the built `@vvv/flowtape` bin the way a user would, from the repo root. */
 function flowtapeCli(...args: string[]) {
-  return spawnSync('npx', ['--no-install', 'flowtape', ...args], { cwd: repoRoot, encoding: 'utf8' });
+  return spawnSync('npx', ['--no-install', '@vvv/flowtape', ...args], { cwd: repoRoot, encoding: 'utf8' });
 }
 
 test.afterEach(async ({ page }) => {
@@ -58,7 +58,7 @@ test('session history is on by default, writes redacted JSONL and remembers the 
   expect(after.join('\n')).not.toContain('Not logged');
 });
 
-test('npx flowtape history lists the session file', async ({ page }) => {
+test('npx @vvv/flowtape history lists the session file', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('login-email').fill('cli@example.test');
   await waitForHistory(page, 'cli@example.test');
