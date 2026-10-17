@@ -19,6 +19,24 @@ export default defineConfig([
     external: ['vite'],
     clean: false,
   },
+  // Node entry: Next.js route handlers.
+  {
+    entry: { next: 'src/next.ts' },
+    format: ['esm', 'cjs'],
+    dts: true,
+    target: 'node18',
+    clean: false,
+  },
+  // Next.js overlay. The banner marks it as a Client Component.
+  {
+    entry: { 'next-client': 'src/next-client.tsx' },
+    format: ['esm', 'cjs'],
+    dts: true,
+    target: 'es2020',
+    external: ['react', 'react-dom'],
+    banner: { js: "'use client';" },
+    clean: false,
+  },
   // Node entry: record and replay scripts. Playwright stays external.
   {
     entry: { node: 'src/node.ts' },

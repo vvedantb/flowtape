@@ -13,3 +13,6 @@ blob-report/
 **/.flowtape/history/
 **/.flowtape/**/*.tmp
 **/.flowtape/replay-failures/
+.next/
+*.tsbuildinfo
+examples/next-demo/AGENTS.md

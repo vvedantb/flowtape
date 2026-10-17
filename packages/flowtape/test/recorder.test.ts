@@ -102,6 +102,21 @@ describe('createRecorder', () => {
     expect(recorder.getSnapshot().events.map((e) => e.type)).toEqual(['navigate']);
   });
 
+  it('notifies subscribers after the current task, once, so a router can call pushState during a React commit', async () => {
+    const listener = vi.fn();
+    const unsubscribe = recorder.subscribe(listener);
+    recorder.start();
+    history.pushState(null, '', '/commit-a');
+    history.pushState(null, '', '/commit-b');
+    // The snapshot is current at once; only the notification waits.
+    expect(recorder.getSnapshot().events.at(-1)).toMatchObject({ type: 'navigate', url: expect.stringContaining('/commit-b') });
+    expect(listener).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+    recorder.stop();
+    unsubscribe();
+  });
+
   it('records pushState and popstate navigation, then restores history', () => {
     const original = history.pushState;
     recorder.start();
@@ -115,7 +130,7 @@ describe('createRecorder', () => {
     expect(urls).toEqual(['/', '/notes', '/notes?tab=2']);
   });
 
-  it('stops listening after stop and notifies subscribers', () => {
+  it('stops listening after stop and notifies subscribers', async () => {
     const listener = vi.fn();
     const unsubscribe = recorder.subscribe(listener);
     recorder.start();
@@ -123,6 +138,7 @@ describe('createRecorder', () => {
     const count = recorder.getSnapshot().events.length;
     el('[data-testid="login-submit"]', HTMLButtonElement).click();
     expect(recorder.getSnapshot().events).toHaveLength(count);
+    await Promise.resolve();
     expect(listener).toHaveBeenCalled();
     unsubscribe();
     recorder.clear();

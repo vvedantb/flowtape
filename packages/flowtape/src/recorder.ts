@@ -212,6 +212,23 @@ export interface CaptureOptions {
 }
 
 /**
+ * Notify external-store subscribers once, in a microtask. Routers change the URL during a React commit
+ * (Next.js calls `pushState` in `useInsertionEffect`), and React forbids store updates there.
+ * The snapshot itself updates at once, so `getSnapshot()` is never stale.
+ */
+export function notifyLater(listeners: Set<() => void>): () => void {
+  let queued = false;
+  return () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      listeners.forEach((listener) => listener());
+    });
+  };
+}
+
+/**
  * One set of page listeners that any number of consumers (named recording, session history) share.
  * Each DOM event is captured and redacted once, then fanned out.
  */
@@ -387,10 +404,11 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
   let snapshot: RecorderSnapshot = { recording: false, events: [] };
   let startedAt = 0;
   let unsubscribe: (() => void) | null = null;
+  const notify = notifyLater(listeners);
 
   const set = (next: Partial<RecorderSnapshot>) => {
     snapshot = { ...snapshot, ...next };
-    listeners.forEach((listener) => listener());
+    notify();
   };
 
   const onEvent = (event: HistoryEvent) => {

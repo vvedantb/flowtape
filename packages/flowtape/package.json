@@ -1,7 +1,7 @@
 {
   "name": "@vvedantb/flowtape",
   "version": "0.2.0",
-  "description": "Record user flows in your running Vite app and export them as Claude Code prompts, or as replay scripts for Playwright.",
+  "description": "Record user flows in your running Vite or Next.js app and export them as Claude Code prompts, or as replay scripts for Playwright.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -35,6 +35,16 @@
       "types": "./dist/vite.d.ts",
       "import": "./dist/vite.js",
       "require": "./dist/vite.cjs"
+    },
+    "./next": {
+      "types": "./dist/next.d.ts",
+      "import": "./dist/next.js",
+      "require": "./dist/next.cjs"
+    },
+    "./next/client": {
+      "types": "./dist/next-client.d.ts",
+      "import": "./dist/next-client.js",
+      "require": "./dist/next-client.cjs"
     },
     "./package.json": "./package.json",
     "./node": {

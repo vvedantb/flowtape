@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { appendEvent, rebase, type Capture } from './recorder';
+import { appendEvent, notifyLater, rebase, type Capture } from './recorder';
 import { HistoryAppendResultSchema } from './schemas';
 import type { FlowMeta, HistoryBatch, HistoryEvent } from './types';
 
@@ -107,10 +107,11 @@ export function createSessionHistory(options: SessionHistoryOptions): SessionHis
   let sending = false;
   let lastUrl = '';
   let unsubscribe: (() => void) | null = null;
+  const notify = notifyLater(listeners);
 
   const set = (next: Partial<SessionHistorySnapshot>) => {
     snapshot = { ...snapshot, ...next };
-    listeners.forEach((listener) => listener());
+    notify();
   };
 
   const send = async (keepalive: boolean) => {
