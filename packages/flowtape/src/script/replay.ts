@@ -171,17 +171,21 @@ async function jevLocate(jev: JevClient, page: ReplayPage, step: ReplayStep, thr
   let target = describeTarget(step);
   if (step.screenshots?.target) {
     assets.ft_target = { type: 'image', format: 'png', data_base64: fitImage(Buffer.from(step.screenshots.target, 'base64')).png.toString('base64') };
-    target = `the UI element shown in ft_target (${target})`;
+    target = `the UI element shown in \`target\` (${target})`;
   }
-  const questions: JevQuestion[] = [
-    {
+  const state: Record<string, string> = { page: 'ft_page' };
+  if (assets.ft_target) state.target = 'ft_target';
+  const questions: Record<string, JevQuestion> = {
+    present: {
       type: 'noul',
-      instructions: `Is ${target} visible in the page screenshot ft_page?`,
+      instructions: `Is ${target} visible in \`page\`?`,
       criteria: { true: 'The element is visible in the page screenshot', false: 'The element is not in the page screenshot' },
     },
-    { type: 'box', instructions: `${target} in \`ft_page\`` },
-  ];
-  const [presence, where] = await jev.ask({ state: 'Current page screenshot: ft_page', questions, assets });
+    where: { type: 'box', instructions: `${target} as it appears in \`page\`` },
+  };
+  const { answers } = await jev.ask({ state, questions, assets });
+  const presence = answers.present;
+  const where = answers.where;
   if (presence?.type !== 'noul' || where?.type !== 'box') throw new StepFailure('Jev returned unexpected answer types');
   // The box question has no "not found", so a low presence score discards the box.
   if (presence.noul < threshold) throw new StepFailure(`Jev: target not found on the page (presence ${presence.noul.toFixed(2)} < ${threshold})`);
@@ -290,11 +294,12 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
     if (!(await expectationMet(page, step, options.expectTimeoutMs ?? 5000))) {
       if (!jev) throw new StepFailure(`Expected outcome not reached: ${describeExpected(step)}`);
       const after = fitImage(await page.screenshot({ type: 'png', scale: 'css' }));
-      const [answer] = await jev.ask({
-        state: 'Page screenshot after the action: ft_after',
-        questions: [{ type: 'noul', instructions: `Does ft_after show this outcome: ${describeExpected(step)}?`, criteria: { true: 'The outcome is visible', false: 'The outcome is not visible' } }],
+      const { answers } = await jev.ask({
+        state: { after: 'ft_after' },
+        questions: { outcome: { type: 'noul', instructions: `Does \`after\` show this outcome: ${describeExpected(step)}?`, criteria: { true: 'The outcome is visible', false: 'The outcome is not visible' } } },
         assets: { ft_after: { type: 'image', format: 'png', data_base64: after.png.toString('base64') } },
       });
+      const answer = answers.outcome;
       const noul = answer?.type === 'noul' ? answer.noul : 0;
       if (noul < threshold) throw new StepFailure(`Expected outcome not reached: ${describeExpected(step)} (Jev ${noul.toFixed(2)} < ${threshold})`);
       result.confidence = Math.min(result.confidence, noul);

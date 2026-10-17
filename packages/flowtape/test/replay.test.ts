@@ -70,11 +70,13 @@ const failureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowtape-test-'));
 const base = { failureDir, selectorTimeoutMs: 0, expectTimeoutMs: 20, stableMs: 1 };
 
 function mockJev(noul: number, confidence = 0.9) {
-  const ask = vi.fn<JevClient['ask']>(async () => [
-    { type: 'noul', noul },
-    // Box centre is (0.5, 0.5) of the fitted image.
-    { type: 'box', box: { top: 0.4, bottom: 0.6, left: 0.4, right: 0.6 }, confidence },
-  ]);
+  const ask = vi.fn<JevClient['ask']>(async () => ({
+    answers: {
+      present: { type: 'noul', noul },
+      // Box centre is (0.5, 0.5) of the fitted image.
+      where: { type: 'box', box: { top: 0.4, bottom: 0.6, left: 0.4, right: 0.6 }, confidence },
+    },
+  }));
   return { jev: { ask } as JevClient, ask };
 }
 
@@ -103,7 +105,8 @@ describe('replayScript', () => {
     expect(result.steps[0]).toMatchObject({ via: 'jev', confidence: 0.9 });
     expect(ask).toHaveBeenCalledTimes(1);
     const request = ask.mock.calls[0][0];
-    expect(request.questions.map((q) => q.type)).toEqual(['noul', 'box']);
+    expect(Object.entries(request.questions).map(([id, q]) => [id, q.type])).toEqual([['present', 'noul'], ['where', 'box']]);
+    expect(request.state).toEqual({ page: 'ft_page', target: 'ft_target' });
     expect(Object.keys(request.assets ?? {})).toEqual(['ft_page', 'ft_target']);
     // The 400x300 page is padded to 400x300 (no change), so the centre is the middle of the page.
     expect(log).toEqual(['mouse 200 150']);

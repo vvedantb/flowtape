@@ -91,14 +91,16 @@ test('falls back to a mocked Jev when selectors fail', async ({ browser }) => {
   const calls: Array<{ questions: string[]; assets: string[] }> = [];
   const jev: JevClient = {
     async ask(request) {
-      calls.push({ questions: request.questions.map((q) => q.type), assets: Object.keys(request.assets ?? {}) });
+      calls.push({ questions: Object.values(request.questions).map((q) => q.type), assets: Object.keys(request.assets ?? {}) });
       // Same viewport, so the screenshot Jev sees is 800x600 and box edges are fractions of it.
       const box = await page.getByRole('button', { name: 'Add note' }).boundingBox();
       if (!box) throw new Error('Button missing');
-      return [
-        { type: 'noul', noul: 0.97 },
-        { type: 'box', confidence: 0.9, box: { left: box.x / 800, right: (box.x + box.width) / 800, top: box.y / 600, bottom: (box.y + box.height) / 600 } },
-      ];
+      return {
+        answers: {
+          present: { type: 'noul', noul: 0.97 },
+          where: { type: 'box', confidence: 0.9, box: { left: box.x / 800, right: (box.x + box.width) / 800, top: box.y / 600, bottom: (box.y + box.height) / 600 } },
+        },
+      };
     },
   };
   const result = await replayScript(brokenSelectors(script), { page, startUrl: mutatedUrl, jev, failureDir, selectorTimeoutMs: 200, env: { FLOWTAPE_PASSWORD: SECRET } });

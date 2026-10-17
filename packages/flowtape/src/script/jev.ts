@@ -6,7 +6,7 @@ export const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
 export type JevQuestion =
   | { type: 'choice'; instructions: string; criteria: Record<string, string> }
   | { type: 'score'; instructions: string; criteria: string[] }
-  | { type: 'noul'; instructions: string; criteria: { true: string; false: string } }
+  | { type: 'noul'; instructions: string; criteria?: { true: string; false: string } }
   | { type: 'box'; instructions: string };
 
 export interface JevAsset {
@@ -17,8 +17,10 @@ export interface JevAsset {
 }
 
 export interface JevRequest {
-  state: string;
-  questions: JevQuestion[];
+  /** An object whose values reference asset keys, so questions can use backtick paths such as `page`. */
+  state: string | Record<string, string>;
+  /** Keyed by ids you choose. */
+  questions: Record<string, JevQuestion>;
   assets?: Record<string, JevAsset>;
 }
 
@@ -32,12 +34,18 @@ export interface JevBox {
 export type JevAnswer =
   | { type: 'noul'; noul: number }
   | { type: 'choice'; choice: string; probabilities: Record<string, number>; confidence: number }
-  | { type: 'score'; score: number; legend: string; probabilities: number[]; confidence: number }
+  | { type: 'score'; score: number; legend: Record<string, string>; probabilities: Record<string, number>; confidence: number }
   | { type: 'box'; box: JevBox; confidence: number };
 
+export interface JevResult {
+  model?: string;
+  /** Same ids as the request's `questions`. */
+  answers: Record<string, JevAnswer>;
+  usage?: unknown;
+}
+
 export interface JevClient {
-  /** One answer per question, in order. */
-  ask(request: JevRequest): Promise<JevAnswer[]>;
+  ask(request: JevRequest): Promise<JevResult>;
 }
 
 export interface JevClientOptions {
@@ -100,9 +108,10 @@ export function createJevClient(options: JevClientOptions): JevClient {
       for (let n = 0; ; n++) {
         const response = await attempt(body);
         if (response.ok) {
-          const json = (await response.json()) as { answers?: JevAnswer[] };
-          if (!Array.isArray(json.answers) || json.answers.length !== request.questions.length) throw new JevError('Unexpected Jev response: answers missing or wrong length');
-          return json.answers;
+          const json = (await response.json()) as Partial<JevResult>;
+          const answers = json.answers;
+          if (!answers || typeof answers !== 'object' || Array.isArray(answers) || Object.keys(request.questions).some((id) => !(id in answers))) throw new JevError('Unexpected Jev response: answers missing for some questions');
+          return { model: json.model, answers, usage: json.usage };
         }
         if (!retryable(response.status) || n >= retries) throw new JevError(`Jev request failed with HTTP ${response.status}`, response.status);
         await sleep(backoffMs * 2 ** n);
