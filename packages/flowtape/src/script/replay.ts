@@ -5,6 +5,7 @@ import { envVarFor } from '../prompt';
 import { fitImage, type FittedImage } from './image';
 import { createJevClient, type JevClient, type JevQuestion } from './jev';
 import { ReplayScriptSchema, type ReplayScript, type ReplaySelector, type ReplayStep } from './schema';
+import { loadChromium } from './playwright';
 
 /** The slice of Playwright's `Page` and `Locator` that replay uses. A real `Page` fits. */
 export interface ReplayLocator {
@@ -371,7 +372,7 @@ export async function replayCommand(options: ReplayCommandOptions): Promise<numb
     return 1;
   }
   const jev = options.jev !== false && apiKey ? createJevClient({ apiKey }) : undefined;
-  const { chromium } = await import('playwright');
+  const chromium = await loadChromium();
   const browser = await chromium.launch({ headless: !options.headed });
   try {
     const page = await browser.newPage({ viewport: script.viewport });

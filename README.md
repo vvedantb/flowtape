@@ -191,7 +191,14 @@ Redacted fields name an environment variable, such as `$FLOWTAPE_PASSWORD`. Set 
 
 ## Replay scripts
 
-The overlay produces prompts for an AI to read. A **replay script** is the other output: a versioned JSON file that Playwright can replay without an AI. It is a separate format from the overlay flow (`FlowDocument`, version 1) and has its own `version`.
+The overlay produces prompts for an AI to read. A **replay script** is the other output: a versioned JSON file that Playwright can replay without an AI.
+
+Playwright is an optional peer dependency, so the overlay alone does not install it. Install it for `record` and `replay`:
+
+```sh
+npm install -D playwright
+npx playwright install chromium
+``` It is a separate format from the overlay flow (`FlowDocument`, version 1) and has its own `version`.
 
 ```sh
 npx @vvedantb/flowtape record http://localhost:5173 --out .flowtape/scripts/login.json
@@ -212,6 +219,8 @@ With neither `--jev` nor `--no-jev`, replay uses Jev only when `TYPESAFE_API_KEY
 ### How replay works
 
 For each step, replay waits for network idle and for the DOM to stay quiet for 300 ms. It then tries the recorded selectors in order and uses the first that matches exactly one element: `test-id`, `role` (with accessible name), `label`, `placeholder`, `text`, then `css`. After the action it checks the step's `expected` outcome (URL or element). A selector hit has confidence 1.
+
+A one-time link (a magic sign-in link, a URL with `token=`) is redacted on record, so it cannot be replayed. When the app redirects from it in JavaScript, the step (or `startUrl`) keeps the clean page it redirects to. A navigation that stays on a redacted URL is left out of the script with a warning (`onWarning` in `recordScript`, a console warning in the CLI).
 
 If every selector misses and Jev is on, replay sends the current page screenshot and the recorded crop of the target to Jev. It asks whether the target is visible and where it is, then clicks the centre of the box. Jev also checks the expected outcome visually when the URL or element check fails. Jev answers use the confidence it returns. A step below the threshold fails.
 

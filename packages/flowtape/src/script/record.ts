@@ -2,10 +2,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page, Request, Response } from 'playwright';
-import { scrubText } from '../redact';
+import { REDACTED, scrubText } from '../redact';
 import { slugify } from '../schemas';
 import type { PagePayload } from './inject';
 import { ReplayScriptSchema, SCRIPT_VERSION, type ReplayScript, type ReplayStep } from './schema';
+import { loadChromium } from './playwright';
 
 export interface RecordOptions {
   page: Page;
@@ -14,6 +15,8 @@ export interface RecordOptions {
   settleMs?: number;
   /** Longest time a redirect chain stays open while requests are still in flight. Default 5000 ms. */
   redirectMs?: number;
+  /** Called for each step left out of the script, for example a page that only a one-time token opens. Default `console.warn`. */
+  onWarning?: (message: string) => void;
   /** In-page agent source. Default: `inject.global.js` next to this build. */
   injectSource?: string;
 }
@@ -39,6 +42,9 @@ export function expectedUrl(from: string, to: string): string {
 }
 
 const b64 = (png: Buffer) => png.toString('base64');
+
+/** True when scrubbing replaces part of the URL, so the recorded URL no longer opens the same page. */
+const isRedacted = (url: string) => scrubText(url).includes(REDACTED);
 
 export async function recordScript(options: RecordOptions): Promise<ScriptRecording> {
   const { page } = options;
@@ -152,6 +158,10 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
     if (busy > 0 || url === lastUrl) return;
     lastUrl = url;
     if (chainOpen()) {
+      // A one-time link (a magic sign-in link, a ticket) cannot be replayed once its token is redacted.
+      // When it redirects to a clean page, replay opens that page instead.
+      if (chainOwner === null && isRedacted(startUrl) && !isRedacted(url)) startUrl = url;
+      else if (chainOwner?.type === 'navigate' && isRedacted(chainOwner.url) && !isRedacted(url)) chainOwner.url = scrubText(url);
       // Replay reaches this URL by itself, so it is the outcome of the chain's first step.
       if (chainOwner) chainOwner.expected = { kind: 'url', url: expectedUrl(chainOwner.url, url) };
       chainAt = activityAt = Date.now();
@@ -184,6 +194,10 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide'))).catch(() => undefined);
       await page.waitForTimeout(50).catch(() => undefined);
       await queue;
+      const warn = options.onWarning ?? ((message: string) => console.warn(message));
+      if (isRedacted(startUrl)) warn(`flowtape: the start URL holds a redacted value, so replay cannot open it: ${scrubText(startUrl)}`);
+      const replayable = steps.filter((step) => !(step.type === 'navigate' && isRedacted(step.url)));
+      if (replayable.length < steps.length) warn(`flowtape: left out ${steps.length - replayable.length} navigation(s) to a URL with a redacted value. Replay cannot open them.`);
       return ReplayScriptSchema.parse({
         version: SCRIPT_VERSION,
         kind: 'flowtape-replay-script',
@@ -192,7 +206,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
         createdAt: new Date(startedAt).toISOString(),
         startUrl: scrubText(startUrl),
         viewport,
-        steps,
+        steps: replayable,
       });
     },
   };
@@ -207,7 +221,7 @@ export interface RecordCommandOptions {
 
 /** `flowtape record <url>`: open a browser, record until Ctrl+C or the window closes, then write JSON. */
 export async function recordCommand(options: RecordCommandOptions): Promise<string> {
-  const { chromium } = await import('playwright');
+  const chromium = await loadChromium();
   const browser = await chromium.launch({ headless: !options.headed });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });

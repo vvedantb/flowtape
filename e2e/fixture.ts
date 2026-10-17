@@ -43,13 +43,20 @@ const login = `<!doctype html><meta charset="utf-8"><title>Signing in</title>
 
 /**
  * Static fixture on a random local port. `/?variant=mutated` serves the refactored page.
- * `/login` redirects to `/?from=login` through `/callback`.
+ * `/login` redirects to `/?from=login` through `/callback`. `/magic?token=…` redirects to `/?from=magic`.
  */
 export async function startFixture(): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (url.pathname === '/slow') {
       setTimeout(() => res.end('ok'), 800);
+      return;
+    }
+    // A magic sign-in link: the page loads with `token=` (redacted on record), then redirects in JavaScript,
+    // as an SPA auth callback does. A server 302 never commits the token URL, so it needs no handling.
+    if (url.pathname === '/magic') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.end(`<!doctype html><title>Signing in</title><script>setTimeout(() => location.replace('/?from=magic'), 100);</script>`);
       return;
     }
     if (url.pathname === '/callback') {

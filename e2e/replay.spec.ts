@@ -148,6 +148,39 @@ test('records a redirect chain on load as the outcome, not as steps', async ({ b
   expect(result.ok).toBe(true);
 });
 
+test('a one-time link is replaced by the page it redirects to; a redacted URL with no redirect is left out', async ({ browser }) => {
+  const page = await newPage(browser);
+  const warnings: string[] = [];
+  const recording = await recordScript({ page, name: 'Magic link', onWarning: (message) => warnings.push(message) });
+  await page.goto(`${fixture.url}magic?token=one-time-magic-token`);
+  await page.waitForURL('**/?from=magic');
+  await page.waitForTimeout(1000);
+  // A user navigation to a magic link: the step keeps the clean destination.
+  await page.goto(`${fixture.url}?other=1`);
+  await page.waitForTimeout(1000);
+  await page.goto(`${fixture.url}magic?token=second-magic-token`);
+  await page.waitForURL('**/?from=magic');
+  await page.waitForTimeout(1000);
+  // A redacted URL that does not redirect cannot be replayed.
+  await page.goto(`${fixture.url}?token=stays-redacted`);
+  await page.waitForTimeout(500);
+  const script = await recording.stop();
+  await page.close();
+
+  expect(script.startUrl).toBe(`${fixture.url}?from=magic`);
+  expect(script.steps.map((s) => [s.type, s.url, s.expected.url])).toEqual([
+    ['navigate', `${fixture.url}?other=1`, `${fixture.url}?other=1`],
+    ['navigate', `${fixture.url}?from=magic`, '/?from=magic'],
+  ]);
+  expect(JSON.stringify(script)).not.toMatch(/magic-token|stays-redacted/);
+  expect(warnings).toEqual([expect.stringContaining('left out 1 navigation')]);
+
+  const replay = await newPage(browser);
+  const result = await replayScript(script, { page: replay, failureDir });
+  await replay.close();
+  expect(result.ok).toBe(true);
+});
+
 test('real Jev finds the button on the refactored page', async ({ browser }) => {
   test.skip(!process.env.TYPESAFE_API_KEY, 'Set TYPESAFE_API_KEY to call the real Jev API.');
   const page = await newPage(browser);
