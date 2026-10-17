@@ -32,7 +32,8 @@ describe('flowToPrompt', () => {
     expect(prompt).toContain('After step 5, the URL path is `/notes`');
     expect(prompt).toContain('After step 8, the text typed in step 7 appears on the page');
     expect(prompt).not.toContain('the text typed in step 2');
-    expect(prompt).toContain('"Email" (`[data-testid="login-email"]`): try empty, `a@`');
+    // The whole line: the personal-data scrub over the final Markdown must not eat the sample addresses.
+    expect(prompt).toContain('"Email" (`[data-testid="login-email"]`): try empty, `a@`, `@example.com`, `a b@example.com` and a 300-character address.');
     expect(prompt).toContain('Secrets / credentials must never be logged');
     expect(prompt).toContain('Recorded with flowtape on 27 September 2026.');
   });
