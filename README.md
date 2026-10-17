@@ -1,6 +1,6 @@
 # flowtape
 
-flowtape records a user journey in your running Vite + React or Next.js app and turns it into a prompt that Claude Code can replay and explore. You click **Record** in a small in-app overlay, use the app as normal, then click **Stop** and **Export**. flowtape writes the flow as JSON and as a Markdown prompt with steps, assertions, fuzz hints and limits. In development it also keeps a **session history**: an always-on, redacted log of what you did in each browser session, so an agent can review recent activity. It is local-first. There is no account, no cloud service and no browser extension. Passwords, masked fields and secret-looking values are redacted before anything is stored.
+flowtape records a user journey in your running Vite + React or Next.js app and turns it into a prompt that Claude Code can replay and explore. You click **Record** in a small in-app overlay, use the app as normal, then click **Stop** and **Export**. flowtape writes the flow as JSON and as a Markdown prompt with steps, assertions, fuzz hints and limits. In development it can also keep a **session history**: an opt-in, redacted log of what you did in each browser session, so an agent can review recent activity. It is local-first. There is no account, no cloud service and no browser extension. Passwords, masked fields, secret-looking values and common personal identifiers (NHS numbers, emails, UK postcodes and mobiles) are redacted before anything is stored.
 
 ## Add it to a Vite app
 
@@ -46,7 +46,7 @@ The overlay renders only outside production builds. Pass `enabled` to force it o
 | `enabled` | on outside production | Show or hide the overlay. |
 | `endpoint` | `/__flowtape` | Base URL of the middleware. |
 | `recorder` | shared page recorder | Supply your own `createRecorder()` instance. |
-| `sessionHistory` | shared page history | Supply your own `createSessionHistory({ capture })`, for example with `defaultEnabled: false`. Share one `createCapture()` with `createRecorder({ capture })` so each event is captured once. |
+| `sessionHistory` | shared page history | Supply your own `createSessionHistory({ capture })`, for example with `defaultEnabled: true`. Share one `createCapture()` with `createRecorder({ capture })` so each event is captured once. |
 
 ## Add it to a Next.js app
 
@@ -119,7 +119,7 @@ Named flows and session history are separate:
 
 | | Record flow | Session history |
 | --- | --- | --- |
-| Starts | When you click **Record** | Automatically in development (on by default) |
+| Starts | When you click **Record** | When you switch it on (off by default) |
 | Ends | When you click **Stop** | When you switch it off or close the tab |
 | Output | `flows/<slug>.json` and `prompts/<slug>.md` on **Export** | `history/<YYYY-MM-DD>-<sessionId>.jsonl`, appended every second |
 | Git | Committed | Ignored |
@@ -128,7 +128,7 @@ Session history uses the same page listeners, event model and redaction as named
 
 A session is one browser tab. Reloading appends to the same file; a new tab starts a new file. The first line of each file is a `session` envelope (id, start time, start URL, user agent, viewport). Every later line is one event, where `ts` is milliseconds since the session started. History is never turned into a named flow automatically; use **Record** for that.
 
-**Toggle it** with the **Session history** switch at the bottom of the overlay. When it is on, the overlay shows the session id, the event count and the file path. The choice is saved in `localStorage` under `flowtape:history` (`1` or `0`), so it survives reloads.
+**Switch it on** with the **Session history** switch at the bottom of the overlay. It is off by default, because it logs typed values continuously, not only while you record. When it is on, the overlay shows the session id, the event count and the file path. The choice is saved in `localStorage` under `flowtape:history` (`1` or `0`), so it survives reloads.
 
 **Review it with an agent.** Point Claude Code at the folder:
 
@@ -267,16 +267,33 @@ Jev is the TypeSafe System One visual model (`jev-1.14.0`, `https://api.typesafe
 Redaction runs three times: in the browser as events are recorded, on the server before files are written, and over the final Markdown. Session history gets the first two.
 
 - **`input[type=password]`**: the value is never stored. The event keeps `redacted: true`, `value: null` and the value's length.
-- **`data-flowtape-mask`**: put this on a field or any ancestor. Every field inside is recorded type-only in the same way. Click text inside a masked area is dropped too.
-- **Secret-looking field names**: fields whose `name`, `id` or `autocomplete` suggests a secret (password, token, API key, OTP, card number, CVC and so on) are treated as masked. This covers "show password" toggles that switch the field to `type="text"`.
+- **`data-flowtape-mask`**: put this on a field or any ancestor. Every field inside is recorded type-only in the same way. Click text inside a masked area is dropped too. To mask a whole form, put it on the `<form>`:
+
+  ```html
+  <form data-flowtape-mask>…every field in here is recorded type-only…</form>
+  ```
+- **Secret-looking and personal field names**: fields whose `name`, `id`, `autocomplete` or label suggests a secret (password, token, API key, OTP, card number, CVC and so on) or a personal identifier (date of birth, NHS number, National Insurance number) are treated as masked. This covers "show password" toggles that switch the field to `type="text"`, and a field labelled "Date of birth" with no telling `name`.
+- **Allowlist mode** (`data-flowtape-allowlist`): for apps that handle personal data. Put it on `<body>` or any container. Inside it, every field is recorded type-only, and links, rows and other non-control elements lose their text, unless the element or an ancestor has `data-flowtape-safe`. Names of buttons, tabs, checkboxes and similar controls are kept, because replay needs them and they are interface labels. Mark the fields that are safe to store:
+
+  ```html
+  <body data-flowtape-allowlist>
+    <input name="patient-name">                <!-- type-only -->
+    <input name="care-tier" data-flowtape-safe> <!-- value stored -->
+    <a href="/people/42">Jane Doe</a>           <!-- click kept, text dropped -->
+    <button>Save placement</button>             <!-- name kept -->
+  </body>
+  ```
 - **Pattern scrub**: every stored string (values, selectors, labels, URLs, hrefs, form actions) is scrubbed for secret shapes and replaced with `[REDACTED]`:
   - `password=`, `token=`, `api_key=` and similar query or form pairs
   - `Bearer …` headers and JWTs
   - `sk-…`, `sk_live_…`, `ghp_…`, `github_pat_…`, `AKIA…`, `xox…-`, `AIza…`
   - `user:pass@` in URLs and PEM private keys
   - long mixed-case base64 runs and long hex strings
+  - NHS numbers (10 digits, grouped or not, that pass the modulus 11 check digit, so other 10-digit ids survive)
+  - email addresses, except reserved example domains (`example.com`, `*.test`, `*.example`, `*.invalid`, `*.localhost`) that test accounts and placeholders use
+  - UK postcodes and UK mobile numbers
 
-The pattern scrub is a safety net, not a guarantee. Mask sensitive fields explicitly with `data-flowtape-mask`, and review a flow before you commit it. `test/prompt-secret-leak.test.ts` plants tokens in values, selectors, URLs and hrefs, then checks that none reach the prompt or the saved JSON.
+The pattern scrub is a safety net, not a guarantee. Names, addresses, dates of birth typed into a free-text field and care notes have no reliable shape, so no pattern finds them. In an app that handles personal data, use allowlist mode, mask sensitive forms with `data-flowtape-mask`, and review a flow before you commit it. `test/prompt-secret-leak.test.ts` plants tokens in values, selectors, URLs and hrefs, then checks that none reach the prompt or the saved JSON.
 
 ## Demo
 

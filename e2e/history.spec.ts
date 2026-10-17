@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { demoRoot, historyFile, removeHistory, waitForHistory } from './history';
+import { demoRoot, enableHistory, historyFile, removeHistory, waitForHistory } from './history';
 
 const repoRoot = path.resolve(demoRoot, '../..');
 
@@ -18,10 +18,12 @@ test.afterEach(async ({ page }) => {
   if (!process.env.FLOWTAPE_KEEP) await removeHistory(page);
 });
 
-test('session history is on by default, writes redacted JSONL and remembers the toggle', async ({ page }) => {
+test('session history is off by default; switched on, it writes redacted JSONL and remembers the toggle', async ({ page }) => {
   await page.goto('/');
   const overlay = page.getByRole('region', { name: 'flowtape recorder' });
   const toggle = overlay.getByRole('switch', { name: 'Session history' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
   await page.getByTestId('login-email').fill('ada@example.test');
@@ -62,6 +64,7 @@ test('session history is on by default, writes redacted JSONL and remembers the 
 });
 
 test('flowtape history lists the session file', async ({ page }) => {
+  await enableHistory(page);
   await page.goto('/');
   await page.getByTestId('login-email').fill('cli@example.test');
   await waitForHistory(page, 'cli@example.test');

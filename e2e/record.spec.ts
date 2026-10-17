@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { demoRoot, removeHistory, waitForHistory } from './history';
+import { demoRoot, enableHistory, removeHistory, waitForHistory } from './history';
 
 const slugs = ['e2e-smoke', 'e2e-copy-fails'];
 const filesFor = (slug: string) => [path.join(demoRoot, `.flowtape/flows/${slug}.json`), path.join(demoRoot, `.flowtape/prompts/${slug}.md`)];
@@ -10,6 +10,11 @@ const files = filesFor('e2e-smoke');
 const SECRETS = ['SuperSecretPass!', '123-45-6789'];
 // Secret-looking strings typed into an ordinary free-text field. Only the scrubber can catch these.
 const PLANTED_NOTE = 'Rotate sk-e2eLEAKME0123456789 and eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJlMmUifQ.e2eLEAKMEsig';
+
+// These tests check that session history runs alongside named recording, so they switch it on.
+test.beforeEach(async ({ page }) => {
+  await enableHistory(page);
+});
 
 // Set FLOWTAPE_KEEP=1 to inspect the output.
 test.afterEach(async ({ page }) => {

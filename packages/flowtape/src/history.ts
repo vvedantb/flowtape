@@ -37,7 +37,7 @@ export interface SessionHistoryOptions {
   capture: Capture;
   /** Base URL of the flowtape middleware. Default `/__flowtape`. */
   endpoint?: string;
-  /** Used when the user has not toggled history yet. Default true. */
+  /** Used when the user has not toggled history yet. Default false: history is opt-in, because it stores typed values. */
   defaultEnabled?: boolean;
   /** Delay before a batch is sent. Default 1000ms. */
   flushMs?: number;
@@ -100,7 +100,7 @@ export function createSessionHistory(options: SessionHistoryOptions): SessionHis
   const endpoint = options.endpoint ?? '/__flowtape';
   const flushMs = options.flushMs ?? 1000;
   const listeners = new Set<() => void>();
-  let snapshot: SessionHistorySnapshot = { enabled: readPref(options.defaultEnabled ?? true), active: false, events: 0 };
+  let snapshot: SessionHistorySnapshot = { enabled: readPref(options.defaultEnabled ?? false), active: false, events: 0 };
   let session: StoredSession | null = null;
   let queue: HistoryEvent[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
