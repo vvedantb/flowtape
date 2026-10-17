@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 5199;
+export const NEXT_PORT = 5198;
 
 export default defineConfig({
   testDir: './e2e',
@@ -9,11 +10,20 @@ export default defineConfig({
   reporter: 'list',
   use: { baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    // `/__flowtape/*` only runs in `vite dev`.
-    command: `npm run dev -w flowtape-vite-demo -- --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      // `/__flowtape/*` only runs in `vite dev`.
+      command: `npm run dev -w flowtape-vite-demo -- --port ${PORT} --strictPort`,
+      url: `http://localhost:${PORT}`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      // `/api/flowtape/*` only runs in `next dev`.
+      command: `npm run dev -w flowtape-next-demo -- --port ${NEXT_PORT}`,
+      url: `http://localhost:${NEXT_PORT}/api/flowtape/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+  ],
 });

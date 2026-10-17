@@ -7,7 +7,8 @@ import { FLOW_VERSION, FlowDocumentSchema, HistoryBatchSchema, SLUG_PATTERN } fr
 import type { FlowDocument, FlowSummary, HistoryAppendResult, HistoryBatch, HistoryFileSummary, HistorySessionLine, SavedFlow } from './types';
 
 export const ENDPOINT = '/__flowtape';
-const MAX_BODY = 5 * 1024 * 1024;
+/** Largest request body, in characters. */
+export const MAX_BODY = 5 * 1024 * 1024;
 
 export interface FlowtapeServerOptions {
   /** Project root. Files land in `<root>/<dir>/flows`, `<root>/<dir>/prompts` and `<root>/<dir>/history`. */
@@ -122,7 +123,8 @@ export function findHistoryDir(from: string, dir = '.flowtape'): string | null {
   }
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+/** Read a Node request body as text, up to `MAX_BODY`. */
+export function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.setEncoding('utf8');
@@ -135,10 +137,50 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-function send(res: ServerResponse, status: number, body: object): void {
+export interface FlowtapeResponse {
+  status: number;
+  body: object;
+}
+
+/**
+ * Route one `<endpoint>/<route>` request. Framework adapters (Vite, Next.js) only translate
+ * their request and response types. `readBody` is called only for routes that take a body.
+ */
+export async function handleRequest(opts: FlowtapeServerOptions, method: string, route: string, readBody: () => Promise<string>): Promise<FlowtapeResponse> {
+  route = route.replace(/^\/+|\/+$/g, '');
+  if (route === 'health') return { status: 200, body: { ok: true, enabled: opts.enabled } };
+  if (!opts.enabled) return { status: 403, body: { error: 'flowtape is disabled' } };
+
+  try {
+    if (route === 'flows' && method === 'POST') {
+      const parsed = FlowDocumentSchema.safeParse(JSON.parse(await readBody()));
+      if (!parsed.success) return { status: 400, body: { error: 'Invalid flow', issues: parsed.error.issues } };
+      return { status: 201, body: saveFlow(opts, parsed.data) };
+    }
+    if (route === 'flows' && method === 'GET') return { status: 200, body: { flows: listFlows(opts) } };
+    // History ignores request headers and cookies; only the parsed event batch is written.
+    if (route === 'history' && method === 'POST') {
+      const parsed = HistoryBatchSchema.safeParse(JSON.parse(await readBody()));
+      if (!parsed.success) return { status: 400, body: { error: 'Invalid history batch', issues: parsed.error.issues } };
+      return { status: 201, body: appendHistory(opts, parsed.data) };
+    }
+    const match = /^flows\/([^/]+)$/.exec(route);
+    if (match && method === 'GET') {
+      const doc = readFlow(opts, match[1]);
+      return doc ? { status: 200, body: doc } : { status: 404, body: { error: 'Flow not found' } };
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  } catch (err) {
+    return { status: 400, body: { error: err instanceof Error ? err.message : String(err) } };
+  }
+}
+
+/** Headers for every flowtape response. */
+export const RESPONSE_HEADERS = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+
+export function writeResponse(res: ServerResponse, { status, body }: FlowtapeResponse): void {
   res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-store');
+  for (const [name, value] of Object.entries(RESPONSE_HEADERS)) res.setHeader(name, value);
   res.end(JSON.stringify(body));
 }
 
@@ -147,34 +189,6 @@ export function createMiddleware(getOptions: () => FlowtapeServerOptions) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (!url.pathname.startsWith(`${ENDPOINT}/`)) return next();
-    const opts = getOptions();
-    const route = url.pathname.slice(ENDPOINT.length + 1).replace(/\/$/, '');
-    const method = req.method ?? 'GET';
-
-    if (route === 'health') return send(res, 200, { ok: true, enabled: opts.enabled });
-    if (!opts.enabled) return send(res, 403, { error: 'flowtape is disabled' });
-
-    try {
-      if (route === 'flows' && method === 'POST') {
-        const parsed = FlowDocumentSchema.safeParse(JSON.parse(await readBody(req)));
-        if (!parsed.success) return send(res, 400, { error: 'Invalid flow', issues: parsed.error.issues });
-        return send(res, 201, saveFlow(opts, parsed.data));
-      }
-      if (route === 'flows' && method === 'GET') return send(res, 200, { flows: listFlows(opts) });
-      // History ignores request headers and cookies; only the parsed event batch is written.
-      if (route === 'history' && method === 'POST') {
-        const parsed = HistoryBatchSchema.safeParse(JSON.parse(await readBody(req)));
-        if (!parsed.success) return send(res, 400, { error: 'Invalid history batch', issues: parsed.error.issues });
-        return send(res, 201, appendHistory(opts, parsed.data));
-      }
-      const match = /^flows\/([^/]+)$/.exec(route);
-      if (match && method === 'GET') {
-        const doc = readFlow(opts, match[1]);
-        return doc ? send(res, 200, doc) : send(res, 404, { error: 'Flow not found' });
-      }
-      return send(res, 404, { error: 'Not found' });
-    } catch (err) {
-      return send(res, 400, { error: err instanceof Error ? err.message : String(err) });
-    }
+    writeResponse(res, await handleRequest(getOptions(), req.method ?? 'GET', url.pathname.slice(ENDPOINT.length + 1), () => readBody(req)));
   };
 }

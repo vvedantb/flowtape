@@ -1,6 +1,6 @@
 # flowtape
 
-flowtape records a user journey in your running Vite + React app and turns it into a prompt that Claude Code can replay and explore. You click **Record** in a small in-app overlay, use the app as normal, then click **Stop** and **Export**. flowtape writes the flow as JSON and as a Markdown prompt with steps, assertions, fuzz hints and limits. In development it also keeps a **session history**: an always-on, redacted log of what you did in each browser session, so an agent can review recent activity. It is local-first. There is no account, no cloud service and no browser extension. Passwords, masked fields and secret-looking values are redacted before anything is stored.
+flowtape records a user journey in your running Vite + React or Next.js app and turns it into a prompt that Claude Code can replay and explore. You click **Record** in a small in-app overlay, use the app as normal, then click **Stop** and **Export**. flowtape writes the flow as JSON and as a Markdown prompt with steps, assertions, fuzz hints and limits. In development it also keeps a **session history**: an always-on, redacted log of what you did in each browser session, so an agent can review recent activity. It is local-first. There is no account, no cloud service and no browser extension. Passwords, masked fields and secret-looking values are redacted before anything is stored.
 
 ## Add it to a Vite app
 
@@ -47,6 +47,61 @@ The overlay renders only outside production builds. Pass `enabled` to force it o
 | `endpoint` | `/__flowtape` | Base URL of the middleware. |
 | `recorder` | shared page recorder | Supply your own `createRecorder()` instance. |
 | `sessionHistory` | shared page history | Supply your own `createSessionHistory({ capture })`, for example with `defaultEnabled: false`. Share one `createCapture()` with `createRecorder({ capture })` so each event is captured once. |
+
+## Add it to a Next.js app
+
+The Vite plugin does not run under `next dev`, so Next.js uses a route handler instead. A folder that starts with `_` is private in the App Router, so the Next.js endpoint is `/api/flowtape`, not `/__flowtape`.
+
+```sh
+npm install -D @vvedantb/flowtape
+```
+
+**App Router** (Next.js 13.4 or later). Add the route:
+
+```ts
+// app/api/flowtape/[...path]/route.ts
+import { flowtapeRouteHandlers } from '@vvedantb/flowtape/next';
+
+export const { GET, POST } = flowtapeRouteHandlers();
+```
+
+Render the overlay in the root layout. `@vvedantb/flowtape/next/client` is marked `'use client'` and sets `endpoint` to `/api/flowtape`, so a Server Component layout can render it directly:
+
+```tsx
+// app/layout.tsx
+import { FlowtapeOverlay } from '@vvedantb/flowtape/next/client';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        {process.env.NODE_ENV === 'development' && <FlowtapeOverlay />}
+      </body>
+    </html>
+  );
+}
+```
+
+**Pages Router** (Next.js 12 or later). Add the API route, and render `<FlowtapeOverlay />` from `@vvedantb/flowtape/next/client` in `pages/_app.tsx`:
+
+```ts
+// pages/api/flowtape/[...path].ts
+import { flowtapeApiHandler } from '@vvedantb/flowtape/next';
+
+export default flowtapeApiHandler();
+```
+
+Next.js parses the body with a 1 MB limit by default. For long recordings, raise it in the same file with `export const config = { api: { bodyParser: { sizeLimit: '5mb' } } };`.
+
+| Handler option | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | on when `NODE_ENV` is `development` | Turn the route on or off. When off, every route except `health` returns 403 and nothing is written. |
+| `dir` | `.flowtape` | Output folder, relative to `root`. |
+| `root` | `process.cwd()` | Project root. Under `next dev` this is the app folder. In a monorepo, check that it is the app and not the repo root. |
+| `endpoint` | `/api/flowtape` | URL path of the catch-all route. Set the overlay's `endpoint` prop to the same value. A `basePath` in front of it is fine. |
+
+The route uses `node:fs`, so keep it on the Node.js runtime (the default). Do not set `export const runtime = 'edge'`. The route ships in a production build but does nothing there. To leave it out entirely, add it only in development. `examples/next-demo` has both routers.
 
 ## Record, stop, name, export
 
@@ -246,7 +301,6 @@ Requires Node 18 or later.
 
 ## Follow-ups (out of scope for now)
 
-- **Next.js plugin**: the same middleware for `next dev`.
 - **Explore / fuzz agent loop**: run the prompt automatically and collect findings.
 - **Full page loads**: keep recording across hard navigations (multi-page apps).
 - **Browser extension**: explicitly out of scope. flowtape records in-app through the SDK only.
