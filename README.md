@@ -113,6 +113,10 @@ The route uses `node:fs`, so keep it on the Node.js runtime (the default). Do no
 
 Clicks inside the overlay are ignored. Text typing is debounced, so each field records its final value once. The recording survives component remounts, hot reloads and full page loads in the same tab (a reload, a server-rendered form post, `location.href`). It is kept in `sessionStorage` under `flowtape:recording`, holds only redacted events, and ends when the tab closes or you click **Clear**. Typing that is still debounced when the page unloads is saved first. Pass `createRecorder({ persist: false })` to keep it in memory only.
 
+## Assertions while recording
+
+While you record, click **Assert**, then click an element on the page. flowtape records a check (the element is visible and shows its current text, or a field's current value) instead of a click, and the app never receives that click. **Esc** or **Cancel** stops picking. A masked element gives a visibility-only check, so its text is never stored. Recorded checks appear in the prompt as **Check:** steps, and they replace the generic final-state `TODO`.
+
 ## Session history
 
 Named flows and session history are separate:

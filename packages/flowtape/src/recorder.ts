@@ -1,7 +1,7 @@
 import { isMaskedElement, redactEvent, redactHistoryEvent, scrubText } from './redact';
 import { z } from 'zod';
 import { FLOW_VERSION, FlowEventSchema, slugify } from './schemas';
-import type { FlowDocument, FlowEvent, FlowMeta, HistoryEvent, InputEvent, NavigateEvent } from './types';
+import type { AssertEvent, FlowDocument, FlowEvent, FlowMeta, HistoryEvent, InputEvent, NavigateEvent } from './types';
 
 /** Mark the overlay (or any dev tooling) with this so its clicks are not recorded. */
 export const UI_ATTR = 'data-flowtape-ui';
@@ -10,6 +10,8 @@ export interface RecorderSnapshot {
   recording: boolean;
   events: FlowEvent[];
   startUrl?: string;
+  /** True between `assertNext()` and the click that picks the element. */
+  asserting: boolean;
 }
 
 export interface Recorder {
@@ -19,6 +21,9 @@ export interface Recorder {
   clear(): void;
   subscribe(listener: () => void): () => void;
   getSnapshot(): RecorderSnapshot;
+  /** While recording: the next click on the page records an assertion on that element instead of a click. */
+  assertNext(): void;
+  cancelAssert(): void;
 }
 
 export const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role], [data-testid], [onclick], [tabindex]';
@@ -170,6 +175,23 @@ function inputEvent(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEleme
     redacted: masked,
     value: masked ? null : raw,
     length: masked ? raw.length : undefined,
+  };
+}
+
+const MAX_ASSERT_TEXT = 200;
+
+/** The element the user picked in assert mode. A masked element gives a visibility-only check. */
+function assertEvent(picked: Element, ts: number): AssertEvent {
+  const el = picked.closest('input, textarea, select') ?? picked;
+  const masked = isMaskedElement(el);
+  const text = masked ? undefined : isField(el) ? el.value : clean(el.textContent);
+  return {
+    type: 'assert',
+    ts,
+    selector: selectorFor(el),
+    role: roleFor(el),
+    name: masked ? undefined : nameFor(el),
+    text: text ? text.slice(0, MAX_ASSERT_TEXT) : undefined,
   };
 }
 
@@ -442,14 +464,16 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
   const persist = options.persist ?? true;
   const listeners = new Set<() => void>();
   const stored = persist ? recordingStore.read() : null;
-  let snapshot: RecorderSnapshot = stored ? { recording: stored.recording, events: stored.events, startUrl: stored.startUrl } : { recording: false, events: [] };
+  let snapshot: RecorderSnapshot = stored
+    ? { recording: stored.recording, events: stored.events, startUrl: stored.startUrl, asserting: false }
+    : { recording: false, events: [], asserting: false };
   let startedAt = stored?.startedAt ?? 0;
   let unsubscribe: (() => void) | null = null;
   const notify = notifyLater(listeners);
 
   const set = (next: Partial<RecorderSnapshot>) => {
     snapshot = { ...snapshot, ...next };
-    if (persist) recordingStore.write(snapshot.events.length || snapshot.recording ? { ...snapshot, startedAt } : null);
+    if (persist) recordingStore.write(snapshot.events.length || snapshot.recording ? { recording: snapshot.recording, events: snapshot.events, startUrl: snapshot.startUrl, startedAt } : null);
     notify();
   };
 
@@ -464,6 +488,34 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
   const listen = () => {
     unsubscribe = capture.subscribe(onEvent);
     window.addEventListener('pagehide', onPageHide);
+  };
+
+  // Assert mode swallows the whole pointer sequence on the page, so the app never acts on the picking click.
+  // Window capture listeners run before the page capture and the app's own handlers. Overlay clicks pass.
+  const swallow = (event: Event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest(`[${UI_ATTR}]`)) return null;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return target;
+  };
+  const onAssertClick = (event: MouseEvent) => {
+    const target = swallow(event);
+    if (!target) return;
+    disarm();
+    capture.flush();
+    set({ events: appendEvent(snapshot.events, rebase(redactEvent(assertEvent(target, capture.now())), startedAt)) });
+  };
+  const onAssertKey = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') disarm();
+  };
+  const ASSERT_SWALLOWED = ['pointerdown', 'pointerup', 'mousedown', 'mouseup'] as const;
+  const disarm = () => {
+    if (!snapshot.asserting) return;
+    window.removeEventListener('click', onAssertClick, true);
+    window.removeEventListener('keydown', onAssertKey, true);
+    ASSERT_SWALLOWED.forEach((type) => window.removeEventListener(type, swallow, true));
+    set({ asserting: false });
   };
 
   // A recording that was running on the previous page carries on here, starting with this page.
@@ -483,6 +535,7 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     },
     stop() {
       if (!snapshot.recording) return;
+      disarm();
       capture.flush();
       unsubscribe?.();
       unsubscribe = null;
@@ -492,6 +545,14 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     clear() {
       set({ events: [], startUrl: undefined });
     },
+    assertNext() {
+      if (!snapshot.recording || snapshot.asserting) return;
+      window.addEventListener('click', onAssertClick, true);
+      window.addEventListener('keydown', onAssertKey, true);
+      ASSERT_SWALLOWED.forEach((type) => window.addEventListener(type, swallow, true));
+      set({ asserting: true });
+    },
+    cancelAssert: () => disarm(),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

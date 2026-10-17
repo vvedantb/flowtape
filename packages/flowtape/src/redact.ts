@@ -138,6 +138,8 @@ export function redactEvent(event: FlowEvent): FlowEvent {
       return redactInput(event);
     case 'submit':
       return { ...event, selector: scrubOptional(event.selector), action: scrubOptional(event.action), method: scrubOptional(event.method) };
+    case 'assert':
+      return { ...event, selector: scrubText(event.selector), role: scrubOptional(event.role), name: scrubOptional(event.name), text: scrubOptional(event.text) };
   }
 }
 

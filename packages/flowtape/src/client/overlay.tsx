@@ -82,6 +82,8 @@ function summarise(event: FlowEvent): string {
       return `input ${event.name ?? event.selector} ${event.redacted ? '(redacted)' : `= "${event.value ?? ''}"`}`;
     case 'submit':
       return `submit ${event.selector ?? 'form'}`;
+    case 'assert':
+      return `assert ${event.name ? `"${event.name}"` : event.selector}${event.text ? ` shows "${event.text}"` : ' is visible'}`;
   }
 }
 
@@ -155,9 +157,19 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
       </div>
       <div style={styles.row}>
         {recording ? (
-          <button type="button" style={{ ...styles.button, ...styles.danger }} onClick={() => recorder.stop()}>
-            Stop
-          </button>
+          <>
+            <button type="button" style={{ ...styles.button, ...styles.danger }} onClick={() => recorder.stop()}>
+              Stop
+            </button>
+            <button
+              type="button"
+              style={{ ...styles.button, ...(snapshot.asserting ? styles.primary : {}) }}
+              aria-pressed={snapshot.asserting}
+              onClick={() => (snapshot.asserting ? recorder.cancelAssert() : recorder.assertNext())}
+            >
+              {snapshot.asserting ? 'Cancel' : 'Assert'}
+            </button>
+          </>
         ) : (
           <button type="button" style={{ ...styles.button, ...styles.primary }} onClick={onRecord}>
             Record
@@ -167,6 +179,11 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
           Clear
         </button>
       </div>
+      {snapshot.asserting ? (
+        <div style={styles.preview} data-testid="flowtape-assert-hint">
+          Click the element to check. Esc cancels.
+        </div>
+      ) : null}
       {last ? (
         <div style={styles.preview} title={summarise(last)}>
           Last: {summarise(last)}

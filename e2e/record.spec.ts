@@ -158,3 +158,40 @@ test('a recording survives a full page load in the same tab', async ({ page }) =
   // Reload of the same URL adds no navigate event.
   expect(flow.events.filter((e: { type: string; url?: string }) => e.type === 'navigate').map((e: { url: string }) => new URL(e.url).pathname)).toEqual(['/', '/notes']);
 });
+
+test('Assert records a check on the picked element without acting on it', async ({ page }) => {
+  await page.goto('/');
+  const overlay = overlayOf(page);
+  await overlay.getByRole('button', { name: 'Record' }).click();
+  await page.getByTestId('login-email').fill('ada@example.test');
+  await page.getByTestId('login-submit').click();
+  await expect(page).toHaveURL(/\/notes$/);
+  await page.getByTestId('note-input').fill('Water the plants');
+  await page.getByTestId('note-add').click();
+
+  const notes = await page.getByTestId('note-item').count();
+  // A real draft, so a click that reached the app would add a note.
+  await page.getByTestId('note-input').fill('Must not be added');
+
+  await overlay.getByRole('button', { name: 'Assert' }).click();
+  await expect(overlay.getByTestId('flowtape-assert-hint')).toBeVisible();
+  await page.getByTestId('note-add').click();
+  await expect(page.getByTestId('note-item')).toHaveCount(notes);
+  await expect(page.getByTestId('note-item').last()).toHaveText('Water the plants');
+  await overlay.getByRole('button', { name: 'Assert' }).click();
+  await page.getByTestId('note-item').last().click();
+  await expect(overlay.getByTestId('flowtape-assert-hint')).toBeHidden();
+
+  await overlay.getByRole('button', { name: 'Stop' }).click();
+  await overlay.getByLabel('Flow name').fill('E2E smoke');
+  await overlay.getByRole('button', { name: 'Export' }).click();
+  await expect(overlay.getByTestId('flowtape-saved')).toContainText('.flowtape/prompts/e2e-smoke.md');
+
+  const flow = JSON.parse(fs.readFileSync(files[0], 'utf8'));
+  const checks = flow.events.filter((e: { type: string }) => e.type === 'assert');
+  expect(checks).toMatchObject([
+    { role: 'button', name: 'Add note' },
+    { selector: '[data-testid="note-item"]', text: 'Water the plants' },
+  ]);
+  expect(fs.readFileSync(files[1], 'utf8')).toContain('is visible and shows `Water the plants`');
+});

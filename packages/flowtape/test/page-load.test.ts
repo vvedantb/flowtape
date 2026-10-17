@@ -55,7 +55,7 @@ describe('recording across a full page load', () => {
     reloaded.stop();
     reloaded.clear();
     expect(sessionStorage.getItem(RECORDING_KEY)).toBeNull();
-    expect(make({ capture: createCapture() }).getSnapshot()).toEqual({ recording: false, events: [] });
+    expect(make({ capture: createCapture() }).getSnapshot()).toEqual({ recording: false, events: [], asserting: false });
   });
 
   it('can be turned off', () => {

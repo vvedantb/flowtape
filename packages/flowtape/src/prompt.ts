@@ -82,6 +82,10 @@ function describe(event: FlowEvent, index: number, events: FlowEvent[], pathOf: 
       const scrubbed = event.value.includes(REDACTED) ? ' **Redacted:** part of the recorded value looked like a secret. Type a synthetic value in its place.' : '';
       return `Type ${value} into the field ${field}.${breaks}${scrubbed}`;
     }
+    case 'assert': {
+      const shows = event.text ? ` and shows ${code(truncate(event.text).replace(/\r\n?|\n/g, ' '))}` : '';
+      return `**Check:** the ${event.role ?? 'element'} ${target(event.name, event.selector)} is visible${shows}. This is an assertion, not an action: do not click it.`;
+    }
     case 'submit': {
       const how = [event.method?.toUpperCase(), event.action].filter(Boolean).join(' ');
       const form = `the form${event.selector ? ` ${code(event.selector)}` : ''}${how ? ` (${how})` : ''}`;
@@ -117,8 +121,12 @@ function assertions(events: FlowEvent[], pathOf: (url: string) => string): strin
       }
     }
   });
+  events.forEach((event, index) => {
+    if (event.type === 'assert') out.push(`Step ${index + 1} is a recorded check. It must pass exactly as written.`);
+  });
   out.push('No uncaught console errors and no failed (4xx/5xx) network requests during the flow.');
-  out.push('TODO: add product-specific checks for the final state.');
+  // Recorded checks are the product-specific ones; without any, the reader must add them.
+  if (!events.some((event) => event.type === 'assert')) out.push('TODO: add product-specific checks for the final state, or record them with **Assert**.');
   return out;
 }
 

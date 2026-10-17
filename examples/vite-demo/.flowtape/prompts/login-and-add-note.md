@@ -35,11 +35,11 @@ Replay the recorded journey "Login and add note" in a real browser and confirm e
 - After step 10 (submit), the form shows a success state or clear validation messages. It does not fail silently.
 - After step 10, the text typed in step 8 appears on the page (for example as a new list item). TODO: confirm the exact outcome.
 - No uncaught console errors and no failed (4xx/5xx) network requests during the flow.
-- TODO: add product-specific checks for the final state.
+- TODO: add product-specific checks for the final state, or record them with **Assert**.
 
 ## Fuzz hints
 
-- "Email" (`[data-testid="login-email"]`): try empty, `a@`, `@b.co`, `a b@c.co` and a 300-character address.
+- "Email" (`[data-testid="login-email"]`): try empty, `a@`, `@example.com`, `a b@example.com` and a 300-character address.
 - "Password" (`[data-testid="login-password"]`): try an empty value and an obviously fake wrong value such as `wrong-value-123`. Never use real credentials.
 - "Member ID" (`[data-testid="login-member-id"]`): try an empty value and an obviously fake wrong value such as `wrong-value-123`. Never use real credentials.
 - "New note" (`[data-testid="note-input"]`): try empty, whitespace only, 1,000+ characters, emoji and right-to-left text, and markup such as `<b>x</b>`.
