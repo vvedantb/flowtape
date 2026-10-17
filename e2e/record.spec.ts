@@ -134,3 +134,27 @@ test('a failed clipboard write shows an error instead of an unhandled rejection'
   const lines = await waitForHistory(page, 'after-copy@example.test');
   expect(lines.slice(1).map((line) => JSON.parse(line).type)).not.toContain('error');
 });
+
+test('a recording survives a full page load in the same tab', async ({ page }) => {
+  await page.goto('/');
+  const overlay = overlayOf(page);
+  await overlay.getByRole('button', { name: 'Record' }).click();
+  await page.getByTestId('login-email').fill('ada@example.test');
+  await page.getByTestId('login-submit').click();
+  await expect(page).toHaveURL(/\/notes$/);
+  // A full page load, as a server-rendered form post or `location.href` causes.
+  await page.reload();
+  await expect(overlay.getByRole('button', { name: 'Stop' })).toBeVisible();
+  await page.getByTestId('note-input').fill('After reload');
+  await page.getByTestId('note-add').click();
+  await overlay.getByRole('button', { name: 'Stop' }).click();
+  await overlay.getByLabel('Flow name').fill('E2E smoke');
+  await overlay.getByRole('button', { name: 'Export' }).click();
+  await expect(overlay.getByTestId('flowtape-saved')).toContainText('.flowtape/prompts/e2e-smoke.md');
+
+  const flow = JSON.parse(fs.readFileSync(files[0], 'utf8'));
+  const values = flow.events.flatMap((e: { type: string; value?: string }) => (e.type === 'input' && e.value ? [e.value] : []));
+  expect(values).toEqual(['ada@example.test', 'After reload']);
+  // Reload of the same URL adds no navigate event.
+  expect(flow.events.filter((e: { type: string; url?: string }) => e.type === 'navigate').map((e: { url: string }) => new URL(e.url).pathname)).toEqual(['/', '/notes']);
+});
