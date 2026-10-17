@@ -33,12 +33,33 @@ const mutated = `<!doctype html><meta charset="utf-8"><title>Fixture</title>
   });
 </script>`;
 
-/** Static fixture on a random local port. `/?variant=mutated` serves the refactored page. */
+// An auth-style redirect chain on load: a client URL rewrite, a slow request, a full page load and a server redirect.
+const login = `<!doctype html><meta charset="utf-8"><title>Signing in</title>
+<p>Signing in…</p>
+<script>
+  history.replaceState(null, '', '/login?ready=1');
+  fetch('/slow').then(() => { location.href = '/callback?ticket=one-time-ticket'; });
+</script>`;
+
+/**
+ * Static fixture on a random local port. `/?variant=mutated` serves the refactored page.
+ * `/login` redirects to `/?from=login` through `/callback`.
+ */
 export async function startFixture(): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
-    const variant = new URL(req.url ?? '/', 'http://x').searchParams.get('variant');
+    const url = new URL(req.url ?? '/', 'http://x');
+    if (url.pathname === '/slow') {
+      setTimeout(() => res.end('ok'), 800);
+      return;
+    }
+    if (url.pathname === '/callback') {
+      res.writeHead(302, { Location: '/?from=login' });
+      res.end();
+      return;
+    }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end(variant === 'mutated' ? mutated : original);
+    if (url.pathname === '/login') res.end(login);
+    else res.end(url.searchParams.get('variant') === 'mutated' ? mutated : original);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
