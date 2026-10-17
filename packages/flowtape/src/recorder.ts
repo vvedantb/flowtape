@@ -20,7 +20,7 @@ export interface Recorder {
   getSnapshot(): RecorderSnapshot;
 }
 
-const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role], [data-testid], [onclick], [tabindex]';
+export const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role], [data-testid], [onclick], [tabindex]';
 const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'submit', 'button', 'reset', 'image', 'file', 'range', 'color']);
 const MAX_TEXT = 80;
 
@@ -75,7 +75,7 @@ export function selectorFor(el: Element): string {
   return parts.join(' > ');
 }
 
-function isField(el: Element): el is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
+export function isField(el: Element): el is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
   return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
 }
 
@@ -83,7 +83,7 @@ function fieldType(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElemen
   return el instanceof HTMLInputElement ? el.type.toLowerCase() || 'text' : el.tagName.toLowerCase();
 }
 
-function isTextEntry(el: Element): boolean {
+export function isTextEntry(el: Element): boolean {
   return el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(fieldType(el)));
 }
 
@@ -124,6 +124,36 @@ export function nameFor(el: Element): string | undefined {
     return clean(el.getAttribute('placeholder')) ?? clean(el.getAttribute('title'));
   }
   return clean(el.getAttribute('title')) ?? clean(el.textContent);
+}
+
+export type SelectorStrategy = 'test-id' | 'role' | 'label' | 'placeholder' | 'text' | 'css';
+
+export interface SelectorCandidate {
+  strategy: SelectorStrategy;
+  /** test-id: data-testid value. role: the accessible name. label, placeholder, text: the string. css: a CSS path. */
+  value: string;
+  role?: string;
+  name?: string;
+}
+
+const MAX_SELECTOR_TEXT = 50;
+
+/** Ordered selector strategies for replay, most stable first. Missing ones are skipped. Masked elements never offer their text. */
+export function selectorsFor(el: Element): SelectorCandidate[] {
+  const out: SelectorCandidate[] = [];
+  const testId = el.getAttribute('data-testid');
+  if (testId) out.push({ strategy: 'test-id', value: scrubText(testId) });
+  const role = roleFor(el);
+  const name = nameFor(el);
+  if (role && name) out.push({ strategy: 'role', role, name: scrubText(name), value: scrubText(name) });
+  const label = isField(el) ? clean(el.labels?.[0]?.textContent) ?? clean(el.getAttribute('aria-label')) : undefined;
+  if (label) out.push({ strategy: 'label', value: scrubText(label) });
+  const placeholder = clean(el.getAttribute('placeholder'));
+  if (placeholder) out.push({ strategy: 'placeholder', value: scrubText(placeholder) });
+  const text = isField(el) || isMaskedElement(el) ? undefined : clean(el.textContent);
+  if (text && text.length <= MAX_SELECTOR_TEXT) out.push({ strategy: 'text', value: scrubText(text) });
+  out.push({ strategy: 'css', value: scrubText(selectorFor(el)) });
+  return out;
 }
 
 function inputEvent(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, ts: number): InputEvent {

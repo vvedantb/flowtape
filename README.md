@@ -134,6 +134,78 @@ claude -p "$(cat .flowtape/prompts/login-and-add-note.md)"
 
 Redacted fields name an environment variable, such as `$FLOWTAPE_PASSWORD`. Set these to **test** credentials in the shell that runs Claude Code. The prompt tells the agent never to print, log or screenshot them.
 
+## Replay scripts
+
+The overlay produces prompts for an AI to read. A **replay script** is the other output: a versioned JSON file that Playwright can replay without an AI. It is a separate format from the overlay flow (`FlowDocument`, version 1) and has its own `version`.
+
+```sh
+npx @vvedantb/flowtape record http://localhost:5173 --out .flowtape/scripts/login.json
+npx @vvedantb/flowtape replay .flowtape/scripts/login.json
+```
+
+`record` opens Chromium (headless by default, `--headed` to see it), records until you press Ctrl+C or close the window, then writes the script. The default path is `.flowtape/scripts/<name>.json`. `--name` sets the script name.
+
+| `replay` flag | Meaning |
+| --- | --- |
+| `--jev` | Use Jev for targets that selectors cannot find. Fails if `TYPESAFE_API_KEY` is not set. |
+| `--no-jev` | Selector-only. Never calls the network. |
+| `--threshold <0-1>` | Minimum confidence per step. Default `0.7`. |
+| `--headed` | Show the browser. |
+
+With neither `--jev` nor `--no-jev`, replay uses Jev only when `TYPESAFE_API_KEY` is set.
+
+### How replay works
+
+For each step, replay waits for network idle and for the DOM to stay quiet for 300 ms. It then tries the recorded selectors in order and uses the first that matches exactly one element: `test-id`, `role` (with accessible name), `label`, `placeholder`, `text`, then `css`. After the action it checks the step's `expected` outcome (URL or element). A selector hit has confidence 1.
+
+If every selector misses and Jev is on, replay sends the current page screenshot and the recorded crop of the target to Jev. It asks whether the target is visible and where it is, then clicks the centre of the box. Jev also checks the expected outcome visually when the URL or element check fails. Jev answers use the confidence it returns. A step below the threshold fails.
+
+A failed replay exits with code 1. It prints the step, the selectors tried, the reason and the paths of before and after screenshots, which it saves under `.flowtape/replay-failures/` (git-ignored).
+
+### Script format
+
+```json
+{
+  "version": 1,
+  "kind": "flowtape-replay-script",
+  "id": "…",
+  "name": "Add a note",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "startUrl": "http://localhost:5173/",
+  "viewport": { "width": 1280, "height": 720 },
+  "steps": [
+    {
+      "type": "click",
+      "ts": 2310,
+      "url": "http://localhost:5173/",
+      "selectors": [
+        { "strategy": "test-id", "value": "add-btn" },
+        { "strategy": "role", "role": "button", "name": "Add note", "value": "Add note" },
+        { "strategy": "text", "value": "Add note" },
+        { "strategy": "css", "value": "[data-testid=\"add-btn\"]" }
+      ],
+      "expected": { "kind": "none" },
+      "screenshots": { "page": "<base64 png>", "target": "<base64 png>" }
+    }
+  ]
+}
+```
+
+- **`type`** is `click`, `type`, `select`, `navigate`, `scroll` or `key` (Enter, Escape, Tab). Typing, `value`, `key` and `scroll` carry the action data.
+- **`expected`** is `{ "kind": "url", "url": "/path" }`, `{ "kind": "element", "selector": "…" }` or `{ "kind": "none" }`. Recording sets `url` when the URL changed after the step. You can edit a script to add an `element` check.
+- **`screenshots`** are raw base64 PNGs (no `data:` prefix). Replay pads and scales them to meet Jev image limits (each side 280 to 1568 px).
+- The script is validated with `ReplayScriptSchema`. Import it from `@vvedantb/flowtape`. The Node API (`recordScript`, `replayScript`, `createJevClient`) is in `@vvedantb/flowtape/node`.
+
+### Password masking
+
+Replay scripts use the same redaction as the overlay. Password fields, `data-flowtape-mask` areas and secret-looking field names record `redacted: true`, `value: null` and the value's length. Redacted steps carry no screenshots, and masked fields are blanked in all other screenshots.
+
+On replay, a redacted field is filled from an environment variable named after the field, for example `FLOWTAPE_PASSWORD`. If the variable is not set, replay leaves the field empty and notes this in the step output. It never invents a secret.
+
+### Jev (optional)
+
+Jev is the TypeSafe System One visual model (`jev-1.14.0`, `https://api.typesafe.ai/v1/systemone`). Set `TYPESAFE_API_KEY` to turn it on. Without a key, replay is selector-only and makes no network calls. With Jev on, page and target screenshots leave your machine, so check that they are safe to share. Image input is experimental.
+
 ## Redaction
 
 Redaction runs three times: in the browser as events are recorded, on the server before files are written, and over the final Markdown. Session history gets the first two.
@@ -167,7 +239,7 @@ Open the demo, click **Record**, sign in with any email, add a note, then click 
 npm run build        # package (tsup, ESM + CJS + types) and demo
 npm test             # Vitest unit tests
 npm run typecheck    # package, demo and e2e
-npm run test:e2e     # Playwright: records a real flow and session history in the demo and checks the files
+npm run test:e2e     # Playwright: records a real flow and session history in the demo, and records and replays a script against a local fixture
 ```
 
 Requires Node 18 or later.
