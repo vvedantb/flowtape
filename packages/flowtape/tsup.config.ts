@@ -19,11 +19,29 @@ export default defineConfig([
     external: ['vite'],
     clean: false,
   },
+  // Node entry: record and replay scripts. Playwright stays external.
+  {
+    entry: { node: 'src/node.ts' },
+    format: ['esm'],
+    dts: true,
+    target: 'node18',
+    external: ['playwright'],
+    clean: false,
+  },
+  // Runs inside the recorded page, so it is self-contained. Written to dist/inject.global.js.
+  {
+    entry: { inject: 'src/script/inject.ts' },
+    format: ['iife'],
+    target: 'es2020',
+    platform: 'browser',
+    clean: false,
+  },
   // `flowtape` bin. The source hashbang is kept.
   {
     entry: { cli: 'src/cli.ts' },
     format: ['esm'],
     target: 'node18',
+    external: ['playwright'],
     clean: false,
   },
 ]);

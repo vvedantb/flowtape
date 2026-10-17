@@ -12,3 +12,4 @@ blob-report/
 # Flows and prompts under .flowtape/ are committed by design. Session history is personal and noisy.
 **/.flowtape/history/
 **/.flowtape/**/*.tmp
+**/.flowtape/replay-failures/
