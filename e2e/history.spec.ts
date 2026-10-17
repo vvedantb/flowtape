@@ -6,9 +6,12 @@ import { demoRoot, historyFile, removeHistory, waitForHistory } from './history'
 
 const repoRoot = path.resolve(demoRoot, '../..');
 
-/** Run the built `@vvedantb/flowtape` bin the way a user would, from the repo root. */
+/**
+ * Run the built CLI from the repo root. It calls the bin file directly: npm links workspace bins at
+ * install time, before the build creates `dist/cli.js`, so `npx` cannot find it on a fresh clone.
+ */
 function flowtapeCli(...args: string[]) {
-  return spawnSync('npx', ['--no-install', '@vvedantb/flowtape', ...args], { cwd: repoRoot, encoding: 'utf8' });
+  return spawnSync(process.execPath, [path.join(repoRoot, 'packages/flowtape/dist/cli.js'), ...args], { cwd: repoRoot, encoding: 'utf8' });
 }
 
 test.afterEach(async ({ page }) => {
@@ -58,7 +61,7 @@ test('session history is on by default, writes redacted JSONL and remembers the 
   expect(after.join('\n')).not.toContain('Not logged');
 });
 
-test('npx @vvedantb/flowtape history lists the session file', async ({ page }) => {
+test('flowtape history lists the session file', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('login-email').fill('cli@example.test');
   await waitForHistory(page, 'cli@example.test');
