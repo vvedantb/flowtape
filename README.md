@@ -34,7 +34,7 @@ createRoot(root).render(
 );
 ```
 
-The overlay renders only outside production builds. Pass `enabled` to force it on or off. To keep it out of your production bundle entirely, render it behind `import.meta.env.DEV`.
+The overlay renders only outside production builds. Pass `enabled` to force it on or off. To keep its code out of your production bundle, render it behind `import.meta.env.DEV` (`{import.meta.env.DEV && <FlowtapeOverlay />}`): Vite then tree-shakes the import.
 
 | Plugin option | Default | Meaning |
 | --- | --- | --- |
@@ -65,7 +65,7 @@ import { flowtapeRouteHandlers } from '@vvedantb/flowtape/next';
 export const { GET, POST } = flowtapeRouteHandlers();
 ```
 
-Render the overlay in the root layout. `@vvedantb/flowtape/next/client` is marked `'use client'` and sets `endpoint` to `/api/flowtape`, so a Server Component layout can render it directly:
+Render the overlay in the root layout. `@vvedantb/flowtape/next/client` is marked `'use client'` and sets `endpoint` to `/api/flowtape`, so a Server Component layout can render it directly. It loads the overlay only under `next dev`: a production build contains none of its code, even though the layout imports it.
 
 ```tsx
 // app/layout.tsx
