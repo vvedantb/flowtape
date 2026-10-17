@@ -248,6 +248,7 @@ A failed replay exits with code 1. It prints the step, the selectors tried, the 
 
 - **`type`** is `click`, `type`, `select`, `navigate`, `scroll` or `key` (Enter, Escape, Tab). Typing, `value`, `key` and `scroll` carry the action data.
 - **`expected`** is `{ "kind": "url", "url": "/path" }`, `{ "kind": "element", "selector": "…" }` or `{ "kind": "none" }`. Recording sets `url` when the URL changed after the step. You can edit a script to add an `element` check.
+- **Redirects** that the app or server starts on its own (an auth callback, a router rewrite, a `302`) are not steps. While requests are still in flight, or within 300 ms of the last one, each new URL updates the `expected` URL of the step before it. A redirect chain on load leaves `startUrl` as the first URL and records no steps. A chain stays open for at most 5 s (`redirectMs` in `recordScript`).
 - **`screenshots`** are raw base64 PNGs (no `data:` prefix). Replay pads and scales them to meet Jev image limits (each side 280 to 1568 px).
 - The script is validated with `ReplayScriptSchema`. Import it from `@vvedantb/flowtape`. The Node API (`recordScript`, `replayScript`, `createJevClient`) is in `@vvedantb/flowtape/node`.
 

@@ -1,7 +1,7 @@
 /** Node only. Records a replay script from a Playwright page. */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Page } from 'playwright';
+import type { Page, Request, Response } from 'playwright';
 import { scrubText } from '../redact';
 import { slugify } from '../schemas';
 import type { PagePayload } from './inject';
@@ -12,6 +12,8 @@ export interface RecordOptions {
   name?: string;
   /** Pause after each action before the outcome is read. Default 300 ms. */
   settleMs?: number;
+  /** Longest time a redirect chain stays open while requests are still in flight. Default 5000 ms. */
+  redirectMs?: number;
   /** In-page agent source. Default: `inject.global.js` next to this build. */
   injectSource?: string;
 }
@@ -48,14 +50,45 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
   let lastUrl = startUrl;
   let busy = 0;
   let queue: Promise<void> = Promise.resolve();
+  const redirectMs = options.redirectMs ?? 5000;
+  // A redirect chain: navigations that the app or server starts after the last load or step.
+  // They update the outcome of the step that started the chain (`null` is the start URL) and never become steps.
+  let chainOwner: ReplayStep | null = null;
+  let chainAt = Date.now();
+  let activityAt = chainAt;
+  const inflight = new Set<Request>();
+  const isDocument = (request: Request) => request.isNavigationRequest() && request.frame() === page.mainFrame();
+  const onRequest = (request: Request) => {
+    // A new document drops the old one's requests, and those never report that they finished.
+    if (isDocument(request)) return inflight.clear();
+    // A stream stays open, so it would hold every chain open until `redirectMs`.
+    if (request.resourceType() !== 'eventsource') inflight.add(request);
+  };
+  // Apps redirect as soon as a response arrives, often before the request reports that it finished.
+  const onResponse = (response: Response) => {
+    if (!isDocument(response.request())) activityAt = Date.now();
+  };
+  const onRequestDone = (request: Request) => {
+    if (inflight.delete(request)) activityAt = Date.now();
+  };
+  const chainOpen = () => {
+    const now = Date.now();
+    return now - chainAt < redirectMs && (inflight.size > 0 || now - activityAt < settleMs);
+  };
+  const startChain = (owner: ReplayStep | null, at = Date.now()) => {
+    chainOwner = owner;
+    chainAt = activityAt = at;
+  };
   const viewport = page.viewportSize() ?? (await page.evaluate(() => ({ width: innerWidth, height: innerHeight })));
 
-  const push = (step: ReplayStep) => {
+  /** `at` is when the action happened. Steps queue up behind each other, so it can be well before now. */
+  const push = (step: ReplayStep, at?: number) => {
     const prev = steps[steps.length - 1];
     // Typing into one field twice in a row keeps only the final value, as in the overlay.
     const same = prev && prev.type === step.type && (step.type === 'type' || step.type === 'select') && JSON.stringify(prev.selectors) === JSON.stringify(step.selectors);
     if (same) steps[steps.length - 1] = step;
     else steps.push(step);
+    startChain(step, at);
   };
 
   async function shoot(payload: PagePayload): Promise<ReplayStep['screenshots']> {
@@ -75,7 +108,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
     return shots.page || shots.target ? shots : undefined;
   }
 
-  async function handle(payload: PagePayload): Promise<void> {
+  async function handle(payload: PagePayload, at: number): Promise<void> {
     busy++;
     try {
       const ts = Date.now() - startedAt;
@@ -101,7 +134,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
         scroll: payload.scroll,
         expected: moved ? { kind: 'url', url: expectedUrl(payload.url, after) } : { kind: 'none' },
         screenshots,
-      });
+      }, at);
     } finally {
       busy--;
     }
@@ -112,24 +145,40 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
     const url = frame.url();
     if (startUrl === 'about:blank') {
       startUrl = lastUrl = url;
+      startChain(null);
       return;
     }
     // Navigations during an action belong to that action's `expected`.
     if (busy > 0 || url === lastUrl) return;
     lastUrl = url;
-    steps.push({ type: 'navigate', ts: Date.now() - startedAt, url: scrubText(url), selectors: [], expected: { kind: 'url', url: scrubText(url) } });
+    if (chainOpen()) {
+      // Replay reaches this URL by itself, so it is the outcome of the chain's first step.
+      if (chainOwner) chainOwner.expected = { kind: 'url', url: expectedUrl(chainOwner.url, url) };
+      chainAt = activityAt = Date.now();
+      return;
+    }
+    push({ type: 'navigate', ts: Date.now() - startedAt, url: scrubText(url), selectors: [], expected: { kind: 'url', url: scrubText(url) } });
   };
 
   await page.exposeBinding('__flowtapeEmit', (_source, payload: PagePayload) => {
-    queue = queue.then(() => handle(payload)).catch(() => undefined);
+    const at = Date.now();
+    queue = queue.then(() => handle(payload, at)).catch(() => undefined);
   });
   const source = options.injectSource ?? loadInject();
   await page.addInitScript(source);
   if (startUrl !== 'about:blank') await page.evaluate(source);
+  page.on('request', onRequest);
+  page.on('response', onResponse);
+  page.on('requestfinished', onRequestDone);
+  page.on('requestfailed', onRequestDone);
   page.on('framenavigated', onNavigate);
 
   return {
     async stop() {
+      page.off('request', onRequest);
+      page.off('response', onResponse);
+      page.off('requestfinished', onRequestDone);
+      page.off('requestfailed', onRequestDone);
       page.off('framenavigated', onNavigate);
       // Flushes typing that is still debounced.
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide'))).catch(() => undefined);

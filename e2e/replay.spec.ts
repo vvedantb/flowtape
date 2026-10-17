@@ -122,6 +122,32 @@ test('fails without Jev when selectors fail', async ({ browser }) => {
   expect(fs.existsSync(result.error?.after ?? '')).toBe(true);
 });
 
+test('records a redirect chain on load as the outcome, not as steps', async ({ browser }) => {
+  const page = await newPage(browser);
+  const recording = await recordScript({ page, name: 'Sign in then add a note' });
+  await page.goto(`${fixture.url}login`);
+  await page.waitForURL('**/?from=login');
+  await page.getByTestId('note-input').pressSequentially('hi');
+  await page.waitForTimeout(700);
+  await page.getByTestId('add-btn').click();
+  await expect(page.getByRole('status')).toHaveText('Added: hi');
+  // A navigation after the page settles is the user's, so it stays a step.
+  await page.waitForTimeout(1000);
+  await page.goto(`${fixture.url}?variant=mutated`);
+  const redirected = await recording.stop();
+  await page.close();
+
+  expect(redirected.startUrl).toBe(`${fixture.url}login`);
+  expect(redirected.steps.map((s) => s.type)).toEqual(['type', 'click', 'navigate']);
+  expect(JSON.stringify(redirected)).not.toContain('one-time-ticket');
+
+  const replay = await newPage(browser);
+  const result = await replayScript(redirected, { page: replay, failureDir });
+  await replay.close();
+  expect(result.error).toBeUndefined();
+  expect(result.ok).toBe(true);
+});
+
 test('real Jev finds the button on the refactored page', async ({ browser }) => {
   test.skip(!process.env.TYPESAFE_API_KEY, 'Set TYPESAFE_API_KEY to call the real Jev API.');
   const page = await newPage(browser);
