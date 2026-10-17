@@ -15,7 +15,7 @@
     "test:e2e": "npm run build -w @vvedantb/flowtape && playwright test",
     "dev": "npm run build -w @vvedantb/flowtape && npm run dev -w flowtape-vite-demo",
     "typecheck": "npm run typecheck -w @vvedantb/flowtape && npm run typecheck -w flowtape-vite-demo && tsc -p e2e --noEmit",
-    "history": "flowtape history examples/vite-demo"
+    "history": "node packages/flowtape/dist/cli.js history examples/vite-demo"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
