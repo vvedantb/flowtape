@@ -1,6 +1,6 @@
 export { FlowtapeOverlay, DEFAULT_ENDPOINT } from './client/overlay';
 export type { FlowtapeOverlayProps } from './client/overlay';
-export { createCapture, createRecorder, createFlowDocument, selectorFor, roleFor, nameFor, appendEvent, rebase, selectorsFor, UI_ATTR } from './recorder';
+export { RECORDING_KEY, createCapture, createRecorder, createFlowDocument, selectorFor, roleFor, nameFor, appendEvent, rebase, selectorsFor, UI_ATTR } from './recorder';
 export type { SelectorCandidate, SelectorStrategy, Capture, CaptureOptions, Recorder, RecorderOptions, RecorderSnapshot, CreateFlowInput } from './recorder';
 export { createSessionHistory, HISTORY_PREF_KEY, HISTORY_SESSION_KEY } from './history';
 export type { SessionHistory, SessionHistoryOptions, SessionHistorySnapshot } from './history';

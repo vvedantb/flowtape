@@ -1,5 +1,6 @@
 import { isMaskedElement, redactEvent, redactHistoryEvent, scrubText } from './redact';
-import { FLOW_VERSION, slugify } from './schemas';
+import { z } from 'zod';
+import { FLOW_VERSION, FlowEventSchema, slugify } from './schemas';
 import type { FlowDocument, FlowEvent, FlowMeta, HistoryEvent, InputEvent, NavigateEvent } from './types';
 
 /** Mark the overlay (or any dev tooling) with this so its clicks are not recorded. */
@@ -395,19 +396,60 @@ export function createCapture(options: CaptureOptions = {}): Capture {
 export interface RecorderOptions extends CaptureOptions {
   /** Share page listeners with session history. Default: a private capture built from the other options. */
   capture?: Capture;
+  /**
+   * Keep the recording in `sessionStorage`, so it survives full page loads (server-rendered forms,
+   * `location.href`, reloads) in the same tab. It holds only redacted events and ends with the tab. Default true.
+   */
+  persist?: boolean;
 }
 
-/** Named flow recording. Accumulates events in memory until the overlay exports them. */
+/** sessionStorage key for a recording that must survive a full page load. */
+export const RECORDING_KEY = 'flowtape:recording';
+
+const StoredRecordingSchema = z.object({
+  recording: z.boolean(),
+  events: z.array(FlowEventSchema),
+  startUrl: z.string().optional(),
+  /** Absolute `capture.now()` at start, so `ts` keeps counting across pages. */
+  startedAt: z.number(),
+});
+type StoredRecording = z.infer<typeof StoredRecordingSchema>;
+
+/** sessionStorage is missing during SSR and can throw when storage is blocked or full. */
+const recordingStore = {
+  read(): StoredRecording | null {
+    try {
+      const raw = sessionStorage.getItem(RECORDING_KEY);
+      const parsed = raw ? StoredRecordingSchema.safeParse(JSON.parse(raw)) : null;
+      return parsed?.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  },
+  write(value: StoredRecording | null): void {
+    try {
+      if (value) sessionStorage.setItem(RECORDING_KEY, JSON.stringify(value));
+      else sessionStorage.removeItem(RECORDING_KEY);
+    } catch {
+      // A recording that cannot be stored still works on this page.
+    }
+  },
+};
+
+/** Named flow recording. Accumulates events until the overlay exports them. */
 export function createRecorder(options: RecorderOptions = {}): Recorder {
   const capture = options.capture ?? createCapture(options);
+  const persist = options.persist ?? true;
   const listeners = new Set<() => void>();
-  let snapshot: RecorderSnapshot = { recording: false, events: [] };
-  let startedAt = 0;
+  const stored = persist ? recordingStore.read() : null;
+  let snapshot: RecorderSnapshot = stored ? { recording: stored.recording, events: stored.events, startUrl: stored.startUrl } : { recording: false, events: [] };
+  let startedAt = stored?.startedAt ?? 0;
   let unsubscribe: (() => void) | null = null;
   const notify = notifyLater(listeners);
 
   const set = (next: Partial<RecorderSnapshot>) => {
     snapshot = { ...snapshot, ...next };
+    if (persist) recordingStore.write(snapshot.events.length || snapshot.recording ? { ...snapshot, startedAt } : null);
     notify();
   };
 
@@ -416,18 +458,35 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     set({ events: appendEvent(snapshot.events, rebase(event, startedAt)) });
   };
 
+  // The page is going away: typing that is still debounced must be stored before it unloads.
+  const onPageHide = () => capture.flush();
+
+  const listen = () => {
+    unsubscribe = capture.subscribe(onEvent);
+    window.addEventListener('pagehide', onPageHide);
+  };
+
+  // A recording that was running on the previous page carries on here, starting with this page.
+  if (stored?.recording) {
+    const page = rebase(capture.page(), startedAt);
+    const last = [...snapshot.events].reverse().find((event) => event.type === 'navigate');
+    if (last?.type !== 'navigate' || last.url !== page.url) set({ events: appendEvent(snapshot.events, page) });
+    listen();
+  }
+
   return {
     start() {
       if (snapshot.recording) return;
       startedAt = capture.now();
       set({ recording: true, events: [rebase(capture.page(), startedAt)], startUrl: scrubText(location.href) });
-      unsubscribe = capture.subscribe(onEvent);
+      listen();
     },
     stop() {
       if (!snapshot.recording) return;
       capture.flush();
       unsubscribe?.();
       unsubscribe = null;
+      window.removeEventListener('pagehide', onPageHide);
       set({ recording: false });
     },
     clear() {

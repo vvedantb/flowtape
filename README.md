@@ -111,7 +111,7 @@ The route uses `node:fs`, so keep it on the Node.js runtime (the default). Do no
 4. Type a name, for example `Login and add note`. The name becomes the file slug (`login-and-add-note`).
 5. Click **Export**. The overlay shows the saved prompt path and a **Copy prompt** button.
 
-Clicks inside the overlay are ignored. Text typing is debounced, so each field records its final value once. The recording survives component remounts and hot reloads, but not a full page load.
+Clicks inside the overlay are ignored. Text typing is debounced, so each field records its final value once. The recording survives component remounts, hot reloads and full page loads in the same tab (a reload, a server-rendered form post, `location.href`). It is kept in `sessionStorage` under `flowtape:recording`, holds only redacted events, and ends when the tab closes or you click **Clear**. Typing that is still debounced when the page unloads is saved first. Pass `createRecorder({ persist: false })` to keep it in memory only.
 
 ## Session history
 
@@ -329,5 +329,4 @@ Requires Node 18 or later.
 ## Follow-ups (out of scope for now)
 
 - **Explore / fuzz agent loop**: run the prompt automatically and collect findings.
-- **Full page loads**: keep recording across hard navigations (multi-page apps).
 - **Browser extension**: explicitly out of scope. flowtape records in-app through the SDK only.
