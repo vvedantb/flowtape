@@ -5,7 +5,7 @@ import { NEXT_PORT } from '../playwright.config';
 
 const nextRoot = path.resolve(import.meta.dirname, '../examples/next-demo');
 const base = `http://localhost:${NEXT_PORT}`;
-const files = [path.join(nextRoot, '.flowtape/flows/next-smoke.json'), path.join(nextRoot, '.flowtape/prompts/next-smoke.md')];
+const files = [path.join(nextRoot, '.flowtape/flows/next-smoke.json'), path.join(nextRoot, '.flowtape/prompts/next-smoke.md'), path.join(nextRoot, '.flowtape/e2e/next-smoke.e2e.ts')];
 const historyDir = path.join(nextRoot, '.flowtape/history');
 
 test.afterEach(() => {

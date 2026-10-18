@@ -25,6 +25,8 @@ export const ClickEventSchema = z.object({
   /** Accessible name: aria-label, label text or visible text. */
   name: z.string().optional(),
   href: z.string().optional(),
+  /** Position among the elements that match `selector`, recorded only when more than one does. */
+  nth: z.number().int().nonnegative().optional(),
 });
 
 export const InputEventSchema = z.object({
@@ -58,6 +60,8 @@ export const AssertEventSchema = z.object({
   name: z.string().optional(),
   /** Visible text, or a field's value. Absent for masked elements, so the check is visibility only. */
   text: z.string().optional(),
+  /** Position among the elements that match `selector`, recorded only when more than one does. */
+  nth: z.number().int().nonnegative().optional(),
 });
 
 export const FlowEventSchema = z.discriminatedUnion('type', [
@@ -123,6 +127,8 @@ export const SavedFlowSchema = z.object({
   flowFile: z.string(),
   promptFile: z.string(),
   prompt: z.string(),
+  /** Draft test for the `e2e` runner. Outside the runner's default `tests/` glob until you move it. */
+  testFile: z.string(),
 });
 
 /** Short random id for one browser session. Doubles as part of the file name. */

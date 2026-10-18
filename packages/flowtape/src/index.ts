@@ -6,6 +6,8 @@ export { createSessionHistory, HISTORY_PREF_KEY, HISTORY_SESSION_KEY } from './h
 export type { SessionHistory, SessionHistoryOptions, SessionHistorySnapshot } from './history';
 export { MASK_ATTR, ALLOWLIST_ATTR, SAFE_ATTR, REDACTED, scrubText, isNhsNumber, isSensitiveName, isMaskedElement, redactEvent, redactHistoryEvent, redactInput, redactFlow } from './redact';
 export { flowToPrompt, envVarFor } from './prompt';
+export { flowToE2ETest, secretNameFor } from './e2e-test';
+export type { E2ETestOptions } from './e2e-test';
 export type { PromptOptions } from './prompt';
 export * from './schemas';
 export * from './script/schema';

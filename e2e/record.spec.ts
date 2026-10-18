@@ -4,7 +4,7 @@ import path from 'node:path';
 import { demoRoot, enableHistory, removeHistory, waitForHistory } from './history';
 
 const slugs = ['e2e-smoke', 'e2e-copy-fails'];
-const filesFor = (slug: string) => [path.join(demoRoot, `.flowtape/flows/${slug}.json`), path.join(demoRoot, `.flowtape/prompts/${slug}.md`)];
+const filesFor = (slug: string) => [path.join(demoRoot, `.flowtape/flows/${slug}.json`), path.join(demoRoot, `.flowtape/prompts/${slug}.md`), path.join(demoRoot, `.flowtape/e2e/${slug}.e2e.ts`)];
 const files = filesFor('e2e-smoke');
 
 const SECRETS = ['SuperSecretPass!', '123-45-6789'];

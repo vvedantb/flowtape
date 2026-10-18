@@ -178,6 +178,16 @@ function inputEvent(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEleme
   };
 }
 
+/** Position of `el` among the elements that match `selector`, or undefined when the selector is unique. */
+function nthOf(el: Element, selector: string): number | undefined {
+  try {
+    const all = [...el.ownerDocument.querySelectorAll(selector)];
+    return all.length > 1 && all.includes(el) ? all.indexOf(el) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const MAX_ASSERT_TEXT = 200;
 
 /** The element the user picked in assert mode. A masked element gives a visibility-only check. */
@@ -185,13 +195,15 @@ function assertEvent(picked: Element, ts: number): AssertEvent {
   const el = picked.closest('input, textarea, select') ?? picked;
   const masked = isMaskedElement(el);
   const text = masked ? undefined : isField(el) ? el.value : clean(el.textContent);
+  const selector = selectorFor(el);
   return {
     type: 'assert',
     ts,
-    selector: selectorFor(el),
+    selector,
     role: roleFor(el),
     name: masked ? undefined : nameFor(el),
     text: text ? text.slice(0, MAX_ASSERT_TEXT) : undefined,
+    nth: nthOf(el, selector),
   };
 }
 
@@ -296,14 +308,16 @@ export function createCapture(options: CaptureOptions = {}): Capture {
     if (isTextEntry(el) || (el instanceof HTMLLabelElement && el.control)) return;
     flushInput();
     const masked = isMaskedElement(el);
+    const selector = selectorFor(el);
     emit({
       type: 'click',
       ts: now(),
-      selector: selectorFor(el),
+      selector,
       role: roleFor(el),
       name: masked ? undefined : nameFor(el),
       text: masked ? undefined : clean(el.textContent),
       href: el instanceof HTMLAnchorElement ? el.getAttribute('href') ?? undefined : undefined,
+      nth: nthOf(el, selector),
     });
   };
 
