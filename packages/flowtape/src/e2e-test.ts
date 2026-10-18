@@ -38,13 +38,16 @@ interface Target {
 /**
  * Most stable locator first: test id, role and accessible name, label, then CSS through `browser`.
  * The runner fails on a locator that matches several nodes, so a test id or CSS selector that did
- * when recorded is narrowed: by its text when it has some (order can change), else by position.
+ * when recorded is narrowed: by its full text when it has some (order can change), else by position.
+ * Partly redacted text and field values narrow by position: the clean part can match siblings,
+ * and `hasText` never matches a field's value.
  */
 function locator(target: Target, kind: 'action' | 'field'): string {
   const narrow = (base: string) => {
     if (target.nth === undefined) return base;
-    const text = checkableText(target.text)?.text;
-    return text ? `${base}.filter({ hasText: ${str(text)} })` : `${base}.nth(${target.nth})`;
+    const check = checkableText(target.text);
+    const isValue = !!target.role && VALUE_ROLES.has(target.role);
+    return check && !check.partial && !isValue ? `${base}.filter({ hasText: ${str(check.text)} })` : `${base}.nth(${target.nth})`;
   };
   const testId = TEST_ID.exec(target.selector)?.[1];
   if (testId) return narrow(`screen.getByTestId(${str(testId)})`);
