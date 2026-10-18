@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type {
+  AssertEventSchema,
   ClickEventSchema,
   FlowDocumentSchema,
   FlowEventSchema,
@@ -19,6 +20,7 @@ export type NavigateEvent = z.infer<typeof NavigateEventSchema>;
 export type ClickEvent = z.infer<typeof ClickEventSchema>;
 export type InputEvent = z.infer<typeof InputEventSchema>;
 export type SubmitEvent = z.infer<typeof SubmitEventSchema>;
+export type AssertEvent = z.infer<typeof AssertEventSchema>;
 export type FlowEvent = z.infer<typeof FlowEventSchema>;
 export type FlowMeta = z.infer<typeof FlowMetaSchema>;
 export type FlowDocument = z.infer<typeof FlowDocumentSchema>;

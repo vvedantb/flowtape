@@ -49,11 +49,23 @@ export const SubmitEventSchema = z.object({
   method: z.string().optional(),
 });
 
+/** A check the user picked while recording: this element is visible and, when `text` is set, shows that text. */
+export const AssertEventSchema = z.object({
+  type: z.literal('assert'),
+  ts,
+  selector: z.string(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  /** Visible text, or a field's value. Absent for masked elements, so the check is visibility only. */
+  text: z.string().optional(),
+});
+
 export const FlowEventSchema = z.discriminatedUnion('type', [
   NavigateEventSchema,
   ClickEventSchema,
   InputEventSchema,
   SubmitEventSchema,
+  AssertEventSchema,
 ]);
 
 /** Uncaught error or unhandled rejection. Session history only; named flows never contain these. */
@@ -73,6 +85,7 @@ export const HistoryEventSchema = z.discriminatedUnion('type', [
   ClickEventSchema,
   InputEventSchema,
   SubmitEventSchema,
+  AssertEventSchema,
   PageErrorEventSchema,
 ]);
 
