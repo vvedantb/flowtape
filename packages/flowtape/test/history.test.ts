@@ -46,7 +46,8 @@ describe('createSessionHistory', () => {
     fetchMock.mockClear();
     capture = createCapture({ debounceMs: 100 });
     recorder = createRecorder({ capture });
-    sessionHistory = createSessionHistory({ capture, flushMs: 50 });
+    // History is opt-in. These tests cover it switched on; the default has its own test.
+    sessionHistory = createSessionHistory({ capture, flushMs: 50, defaultEnabled: true });
     unmount = () => {};
   });
 
@@ -58,7 +59,14 @@ describe('createSessionHistory', () => {
     vi.useRealTimers();
   });
 
-  it('is on by default and appends batched events to one session', async () => {
+  it('is off by default, because it stores typed values', () => {
+    const fresh = createSessionHistory({ capture, flushMs: 50 });
+    const stop = fresh.subscribe(() => {});
+    expect(fresh.getSnapshot()).toMatchObject({ enabled: false, active: false });
+    stop();
+  });
+
+  it('appends batched events to one session when switched on', async () => {
     mount();
     const { sessionId, active, enabled } = sessionHistory.getSnapshot();
     expect({ active, enabled }).toEqual({ active: true, enabled: true });
@@ -136,7 +144,7 @@ describe('createSessionHistory', () => {
     await Promise.resolve();
     expect(sessionHistory.getSnapshot().active).toBe(false);
 
-    sessionHistory = createSessionHistory({ capture, flushMs: 50 });
+    sessionHistory = createSessionHistory({ capture, flushMs: 50, defaultEnabled: true });
     mount();
     expect(sessionHistory.getSnapshot().sessionId).toBe(sessionId);
   });

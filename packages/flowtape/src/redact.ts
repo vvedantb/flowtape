@@ -3,12 +3,45 @@ import type { FlowDocument, FlowEvent, HistoryEvent, InputEvent } from './types'
 
 /** Put this on any element (or ancestor) whose value must never be stored. */
 export const MASK_ATTR = 'data-flowtape-mask';
+/**
+ * Allowlist mode. Inside an element with this attribute (for example `<body>`), every field is masked and
+ * every non-control element drops its text, unless the element or an ancestor has `data-flowtape-safe`.
+ */
+export const ALLOWLIST_ATTR = 'data-flowtape-allowlist';
+/** Marks a field or area whose values may be stored in allowlist mode. */
+export const SAFE_ATTR = 'data-flowtape-safe';
 /** Replaces secrets found inside free text. */
 export const REDACTED = '[REDACTED]';
 
-/** Field names, ids and autocomplete hints that mean "secret". */
+/** Field names, ids, labels and autocomplete hints that mean "secret" or "personal identifier". */
 const SENSITIVE_NAME =
-  /pass(word|wd|code|phrase)?|pwd|secret|token|api[-_]?key|private[-_]?key|credential|ssn|social[-_]?security|cvv|cvc|card[-_]?number|cc-(number|csc)|one-time-code|otp|(^|[^a-z])pin([^a-z]|$)/i;
+  /pass(word|wd|code|phrase)?|pwd|secret|token|api[-_]?key|private[-_]?key|credential|ssn|social[-_]?security|cvv|cvc|card[-_]?number|cc-(number|csc)|one-time-code|otp|(^|[^a-z])pin([^a-z]|$)|(^|[^a-z])dob([^a-z]|$)|date[-_\s]?of[-_\s]?birth|birth[-_\s]?(date|day)|bday|nhs[-_\s]?(number|no\b|num)|national[-_\s]?insurance|(^|[^a-z])ni[-_\s]?(number|no\b)/i;
+
+/** NHS number check digit (modulus 11). A 10-digit run that fails it is not an NHS number. */
+export function isNhsNumber(digits: string): boolean {
+  if (!/^\d{10}$/.test(digits)) return false;
+  const sum = [...digits.slice(0, 9)].reduce((total, digit, index) => total + Number(digit) * (10 - index), 0);
+  const check = 11 - (sum % 11);
+  if (check === 10) return false;
+  return (check === 11 ? 0 : check) === Number(digits[9]);
+}
+
+const RESERVED_EMAIL_DOMAIN = /@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|net|org)|[A-Za-z0-9-]+\.(?:test|example|invalid|localhost)|test|example|invalid|localhost)$/i;
+
+/**
+ * Personal data that can appear in any typed value, URL or label. Runs after the secret patterns.
+ * Names, addresses and free-text notes have no reliable shape: use `data-flowtape-mask` or allowlist mode for those.
+ */
+const PERSONAL_PATTERNS: Array<[RegExp, (match: string) => string]> = [
+  // NHS number: 10 digits, often grouped 3-3-4. Only runs that pass the check digit, so other ids survive.
+  [/(?<!\d)\d{3}[ -]?\d{3}[ -]?\d{4}(?!\d)/g, (match) => (isNhsNumber(match.replace(/\D/g, '')) ? REDACTED : match)],
+  // Email, except reserved example domains (RFC 2606, RFC 6761): no real person has one, and test accounts and placeholders use them.
+  [/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g, (match) => (RESERVED_EMAIL_DOMAIN.test(match) ? match : REDACTED)],
+  // UK postcode, for example `SW1A 1AA` or `m1 1ae`.
+  [/\b(?:GIR ?0AA|[A-PR-UWYZ][A-HK-Y]?\d[A-Z\d]? ?\d[ABD-HJLNP-UW-Z]{2})\b/gi, () => REDACTED],
+  // UK mobile number.
+  [/(?<![\d+])(?:\+44 ?7\d{3}|07\d{3}) ?\d{3} ?\d{3}(?!\d)/g, () => REDACTED],
+];
 
 /** Order matters: the specific token shapes run before the generic long-token sweep. */
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
@@ -33,9 +66,10 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\b[a-fA-F0-9]{32,}\b/g, REDACTED],
 ];
 
-/** Replace every secret-looking substring with `[REDACTED]`. */
+/** Replace every secret-looking or personal-data-looking substring with `[REDACTED]`. */
 export function scrubText(text: string): string {
-  return SECRET_PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+  const scrubbed = SECRET_PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+  return PERSONAL_PATTERNS.reduce((out, [pattern, replace]) => out.replace(pattern, replace), scrubbed);
 }
 
 function scrubOptional(text: string | undefined): string | undefined {
@@ -47,11 +81,32 @@ export function isSensitiveName(text: string | undefined | null): boolean {
   return !!text && SENSITIVE_NAME.test(text);
 }
 
-/** Record-time check: must this element's value be withheld? */
+const FIELD_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+const CONTROL_ROLES = new Set(['button', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'checkbox', 'radio', 'switch', 'combobox']);
+
+/** Buttons, tabs and similar controls. Their names are interface labels, so allowlist mode keeps them. */
+function isControl(el: Element): boolean {
+  const role = el.getAttribute('role');
+  if (role) return CONTROL_ROLES.has(role);
+  if (el.tagName === 'BUTTON' || el.tagName === 'SUMMARY') return true;
+  return el.tagName === 'INPUT' && ['button', 'submit', 'reset', 'checkbox', 'radio'].includes((el.getAttribute('type') ?? '').toLowerCase());
+}
+
+/** The element's own label text, for a field labelled "Date of birth" with no telling name or id. */
+function labelOf(el: Element): string | undefined {
+  const labels = 'labels' in el && el.labels instanceof NodeList ? [...el.labels] : [];
+  return [el.getAttribute('aria-label'), ...labels.map((label) => label.textContent)].filter(Boolean).join(' ') || undefined;
+}
+
+/** Record-time check: must this element's value (or, for a non-field, its text) be withheld? */
 export function isMaskedElement(el: Element): boolean {
   if (el.closest(`[${MASK_ATTR}]`)) return true;
   if ((el.getAttribute('type') ?? '').toLowerCase() === 'password') return true;
-  return ['name', 'id', 'autocomplete'].some((attr) => isSensitiveName(el.getAttribute(attr)));
+  if (['name', 'id', 'autocomplete'].some((attr) => isSensitiveName(el.getAttribute(attr)))) return true;
+  if (FIELD_TAGS.has(el.tagName) && isSensitiveName(labelOf(el))) return true;
+  // Allowlist mode: nothing inside is stored unless it is marked safe. Control names are kept.
+  if (el.closest(`[${ALLOWLIST_ATTR}]`) && !el.closest(`[${SAFE_ATTR}]`)) return FIELD_TAGS.has(el.tagName) || !isControl(el);
+  return false;
 }
 
 function isSensitiveInput(event: InputEvent): boolean {

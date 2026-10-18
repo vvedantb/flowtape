@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url';
 export const demoRoot = fileURLToPath(new URL('../examples/vite-demo/', import.meta.url));
 const historyDir = path.join(demoRoot, '.flowtape/history');
 
+/** Session history is opt-in. Switch it on before the page loads, as a user who once clicked the toggle would. */
+export async function enableHistory(page: Page): Promise<void> {
+  await page.addInitScript(() => localStorage.setItem('flowtape:history', '1'));
+}
+
 /** History file for the session shown in the overlay, or null before the first write. */
 export async function historyFile(page: Page): Promise<string | null> {
   const sessionId = await page.getByTestId('flowtape-history-session').textContent();

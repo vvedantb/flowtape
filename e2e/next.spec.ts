@@ -15,6 +15,7 @@ test.afterEach(() => {
 });
 
 test('Next.js App Router: record → stop → export writes the flow, prompt and session history', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('flowtape:history', '1'));
   await page.goto(base);
   const overlay = page.getByRole('region', { name: 'flowtape recorder' });
 

@@ -132,7 +132,8 @@ function fuzzHints(events: FlowEvent[], pathOf: (url: string) => string): string
     if (event.redacted) {
       out.push(`${field}: try an empty value and an obviously fake wrong value such as ${code('wrong-value-123')}. Never use real credentials.`);
     } else if (event.inputType === 'email') {
-      out.push(`${field}: try empty, ${code('a@')}, ${code('@b.co')}, ${code('a b@c.co')} and a 300-character address.`);
+      // Reserved example domains, so the personal-data scrub over the final Markdown keeps them.
+      out.push(`${field}: try empty, ${code('a@')}, ${code('@example.com')}, ${code('a b@example.com')} and a 300-character address.`);
     } else if (event.inputType === 'number') {
       out.push(`${field}: try empty, negative, decimal, ${code('1e309')} and non-numeric text.`);
     } else if (isTextInput(event)) {

@@ -4,7 +4,7 @@ export { createCapture, createRecorder, createFlowDocument, selectorFor, roleFor
 export type { SelectorCandidate, SelectorStrategy, Capture, CaptureOptions, Recorder, RecorderOptions, RecorderSnapshot, CreateFlowInput } from './recorder';
 export { createSessionHistory, HISTORY_PREF_KEY, HISTORY_SESSION_KEY } from './history';
 export type { SessionHistory, SessionHistoryOptions, SessionHistorySnapshot } from './history';
-export { MASK_ATTR, REDACTED, scrubText, isSensitiveName, isMaskedElement, redactEvent, redactHistoryEvent, redactInput, redactFlow } from './redact';
+export { MASK_ATTR, ALLOWLIST_ATTR, SAFE_ATTR, REDACTED, scrubText, isNhsNumber, isSensitiveName, isMaskedElement, redactEvent, redactHistoryEvent, redactInput, redactFlow } from './redact';
 export { flowToPrompt, envVarFor } from './prompt';
 export type { PromptOptions } from './prompt';
 export * from './schemas';
