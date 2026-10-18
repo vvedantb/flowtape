@@ -1,4 +1,4 @@
-import { REDACTED, redactFlow } from './redact';
+import { REDACTED, checkableText, redactFlow } from './redact';
 import type { FlowDocument, FlowEvent, InputEvent } from './types';
 
 export interface E2ETestOptions {
@@ -38,12 +38,16 @@ interface Target {
 /**
  * Most stable locator first: test id, role and accessible name, label, then CSS through `browser`.
  * The runner fails on a locator that matches several nodes, so a test id or CSS selector that did
- * when recorded is narrowed: by its text when it has some (order can change), else by position.
+ * when recorded is narrowed: by its full text when it has some (order can change), else by position.
+ * Partly redacted text and field values narrow by position: the clean part can match siblings,
+ * and `hasText` never matches a field's value.
  */
 function locator(target: Target, kind: 'action' | 'field'): string {
   const narrow = (base: string) => {
     if (target.nth === undefined) return base;
-    return target.text ? `${base}.filter({ hasText: ${str(target.text)} })` : `${base}.nth(${target.nth})`;
+    const check = checkableText(target.text);
+    const isValue = !!target.role && VALUE_ROLES.has(target.role);
+    return check && !check.partial && !isValue ? `${base}.filter({ hasText: ${str(check.text)} })` : `${base}.nth(${target.nth})`;
   };
   const testId = TEST_ID.exec(target.selector)?.[1];
   if (testId) return narrow(`screen.getByTestId(${str(testId)})`);
@@ -97,7 +101,14 @@ function stepLines(event: FlowEvent, index: number, events: FlowEvent[], origin:
     case 'assert': {
       const target = locator(event, 'action');
       const lines = [`await expect(${target}).toBeVisible();`];
-      if (event.text) lines.push(`await expect(${target}).${event.role && VALUE_ROLES.has(event.role) ? 'toHaveValue' : 'toContainText'}(${str(event.text)});`);
+      const check = checkableText(event.text);
+      const isValue = !!event.role && VALUE_ROLES.has(event.role);
+      if (event.text && !check) lines.push('// TODO: the recorded text was redacted, so only visibility is checked. Add a check for a synthetic value.');
+      else if (check?.partial && isValue) lines.push('// TODO: part of the recorded value was redacted. Add a check for a synthetic value.');
+      else if (check) {
+        if (check.partial) lines.push('// Part of the recorded text was redacted. This checks the rest.');
+        lines.push(`await expect(${target}).${isValue ? 'toHaveValue' : 'toContainText'}(${str(check.text)});`);
+      }
       return lines;
     }
   }

@@ -72,6 +72,20 @@ export function scrubText(text: string): string {
   return PERSONAL_PATTERNS.reduce((out, [pattern, replace]) => out.replace(pattern, replace), scrubbed);
 }
 
+/**
+ * Text that a check can look for on the page. Recorded text with `[REDACTED]` in it never appears on the
+ * page, so a check uses its longest clean part instead (`partial`). Undefined when no part is long enough.
+ */
+export function checkableText(text: string | undefined): { text: string; partial: boolean } | undefined {
+  if (!text) return undefined;
+  if (!text.includes(REDACTED)) return { text, partial: false };
+  const longest = text
+    .split(REDACTED)
+    .map((part) => part.replace(/^[\s,.;:()-]+|[\s,.;:()-]+$/g, ''))
+    .reduce((best, part) => (part.length > best.length ? part : best), '');
+  return longest.length >= 3 ? { text: longest, partial: true } : undefined;
+}
+
 function scrubOptional(text: string | undefined): string | undefined {
   return text === undefined ? undefined : scrubText(text);
 }

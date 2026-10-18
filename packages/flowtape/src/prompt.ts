@@ -1,4 +1,4 @@
-import { REDACTED, redactFlow, scrubText } from './redact';
+import { REDACTED, checkableText, redactFlow, scrubText } from './redact';
 import type { FlowDocument, FlowEvent, InputEvent } from './types';
 
 export interface PromptOptions {
@@ -83,7 +83,15 @@ function describe(event: FlowEvent, index: number, events: FlowEvent[], pathOf: 
       return `Type ${value} into the field ${field}.${breaks}${scrubbed}`;
     }
     case 'assert': {
-      const shows = event.text ? ` and shows ${code(truncate(event.text).replace(/\r\n?|\n/g, ' '))}` : '';
+      const check = checkableText(event.text);
+      const quoted = check && code(truncate(check.text).replace(/\r\n?|\n/g, ' '));
+      const shows = !event.text
+        ? ''
+        : !check
+          ? '. Its recorded text was redacted, so check only that it is visible'
+          : check.partial
+            ? ` and shows text that includes ${quoted} (the rest was redacted)`
+            : ` and shows ${quoted}`;
       return `**Check:** the ${event.role ?? 'element'} ${target(event.name, event.selector)} is visible${shows}. This is an assertion, not an action: do not click it.`;
     }
     case 'submit': {

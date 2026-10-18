@@ -98,3 +98,14 @@ describe('recording in allowlist mode', () => {
     expect(events.filter((e) => e.type === 'click').map((e) => (e.type === 'click' ? e.name : ''))).toEqual([undefined, 'Save placement']);
   });
 });
+
+describe('checkableText', () => {
+  it('keeps clean text, picks the longest clean part of redacted text, and gives up on short parts', async () => {
+    const { checkableText } = await import('../src/redact');
+    expect(checkableText('Water the plants')).toEqual({ text: 'Water the plants', partial: false });
+    expect(checkableText('Seen at [REDACTED], mail [REDACTED]')).toEqual({ text: 'Seen at', partial: true });
+    expect(checkableText('NHS [REDACTED]')).toEqual({ text: 'NHS', partial: true });
+    expect(checkableText('No [REDACTED]')).toBeUndefined();
+    expect(checkableText(undefined)).toBeUndefined();
+  });
+});

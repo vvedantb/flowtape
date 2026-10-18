@@ -160,6 +160,10 @@ test('a recording survives a full page load in the same tab', async ({ page }) =
 });
 
 test('Assert records a check on the picked element without acting on it', async ({ page }) => {
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning' || message.type() === 'error') warnings.push(message.text());
+  });
   await page.goto('/');
   const overlay = overlayOf(page);
   await overlay.getByRole('button', { name: 'Record' }).click();
@@ -194,4 +198,6 @@ test('Assert records a check on the picked element without acting on it', async 
     { selector: '[data-testid="note-item"]', text: 'Water the plants' },
   ]);
   expect(fs.readFileSync(files[1], 'utf8')).toContain('is visible and shows `Water the plants`');
+  // Toggling Assert re-renders one button between styles. React warns if they mix border shorthand and longhand.
+  expect(warnings.filter((text) => /style property/.test(text))).toEqual([]);
 });
