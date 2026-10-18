@@ -70,3 +70,20 @@ describe('assert mode', () => {
     expect(prompt).not.toContain('TODO: add product-specific checks');
   });
 });
+
+describe('assert prompt with redacted text', () => {
+  it('names the clean part, or says only visibility is checked', () => {
+    const prompt = flowToPrompt(
+      createFlowDocument({
+        name: 'Redacted checks',
+        startUrl: 'http://localhost:5173/',
+        events: [
+          { type: 'assert', ts: 0, selector: '#a', text: 'Seen at [REDACTED]' },
+          { type: 'assert', ts: 1, selector: '#b', text: 'No [REDACTED]' },
+        ],
+      }),
+    );
+    expect(prompt).toContain('is visible and shows text that includes `Seen at` (the rest was redacted).');
+    expect(prompt).toContain('is visible. Its recorded text was redacted, so check only that it is visible.');
+  });
+});

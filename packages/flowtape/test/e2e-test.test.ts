@@ -76,3 +76,22 @@ describe('flowToE2ETest', () => {
     expect(withSession).toContain('screen.getByRole("button", "Say \\"hi\\"").tap();');
   });
 });
+
+describe('recorded text with redacted parts', () => {
+  it('checks the longest clean part, or only visibility when none is left', () => {
+    const out = flowToE2ETest(
+      makeFlow([
+        { type: 'assert', ts: 0, selector: '[data-testid="row"]', text: 'Seen at [REDACTED], mail [REDACTED]', nth: 2 },
+        { type: 'assert', ts: 1, selector: '#nhs-label', text: 'No [REDACTED]' },
+        { type: 'assert', ts: 2, selector: '#field', role: 'textbox', name: 'Notes', text: 'Call [REDACTED] today' },
+      ]),
+    );
+    expect(out).not.toContain('[REDACTED]"');
+    expect(out).toContain('await expect(screen.getByTestId("row").filter({ hasText: "Seen at" })).toBeVisible();');
+    expect(out).toContain('// Part of the recorded text was redacted. This checks the rest.');
+    expect(out).toContain('await expect(screen.getByTestId("row").filter({ hasText: "Seen at" })).toContainText("Seen at");');
+    expect(out).toContain('await expect(browser.locator("#nhs-label")).toBeVisible();\n  // TODO: the recorded text was redacted, so only visibility is checked.');
+    expect(out).toContain('// TODO: part of the recorded value was redacted. Add a check for a synthetic value.');
+    expect(out).not.toContain('toHaveValue');
+  });
+});

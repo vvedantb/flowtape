@@ -272,8 +272,9 @@ const styles = {
     font: 'inherit',
     cursor: 'pointer',
   },
-  primary: { background: '#2563eb', borderColor: '#2563eb' },
-  danger: { background: '#dc2626', borderColor: '#dc2626' },
+  // Shorthand `border`, as in `button`: React warns when a re-render toggles longhand against shorthand.
+  primary: { background: '#2563eb', border: '1px solid #2563eb' },
+  danger: { background: '#dc2626', border: '1px solid #dc2626' },
   input: {
     flex: 1,
     minWidth: 0,
