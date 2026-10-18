@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
+import { flowToE2ETest } from './e2e-test';
 import { flowToPrompt } from './prompt';
 import { redactFlow, redactHistoryEvent, scrubText } from './redact';
 import { FLOW_VERSION, FlowDocumentSchema, HistoryBatchSchema, SLUG_PATTERN } from './schemas';
@@ -23,29 +24,33 @@ interface Paths {
   flows: string;
   prompts: string;
   history: string;
+  e2e: string;
 }
 
 function pathsFor(opts: FlowtapeServerOptions): Paths {
   const base = path.resolve(opts.root, opts.dir ?? '.flowtape');
-  return { base, flows: path.join(base, 'flows'), prompts: path.join(base, 'prompts'), history: path.join(base, 'history') };
+  return { base, flows: path.join(base, 'flows'), prompts: path.join(base, 'prompts'), history: path.join(base, 'history'), e2e: path.join(base, 'e2e') };
 }
 
 function relative(opts: FlowtapeServerOptions, file: string): string {
   return path.relative(opts.root, file).split(path.sep).join('/');
 }
 
-/** Validate, redact again, then write `flows/<slug>.json` and `prompts/<slug>.md`. */
+/** Validate, redact again, then write `flows/<slug>.json`, `prompts/<slug>.md` and a draft `e2e/<slug>.e2e.ts`. */
 export function saveFlow(opts: FlowtapeServerOptions, input: FlowDocument): SavedFlow {
   const doc = redactFlow(FlowDocumentSchema.parse(input));
   const dirs = pathsFor(opts);
   fs.mkdirSync(dirs.flows, { recursive: true });
   fs.mkdirSync(dirs.prompts, { recursive: true });
+  fs.mkdirSync(dirs.e2e, { recursive: true });
   const flowFile = path.join(dirs.flows, `${doc.slug}.json`);
   const promptFile = path.join(dirs.prompts, `${doc.slug}.md`);
+  const testFile = path.join(dirs.e2e, `${doc.slug}.e2e.ts`);
   const prompt = flowToPrompt(doc, { flowFile: relative(opts, flowFile) });
   fs.writeFileSync(flowFile, `${JSON.stringify(doc, null, 2)}\n`);
   fs.writeFileSync(promptFile, prompt);
-  return { slug: doc.slug, flowFile: relative(opts, flowFile), promptFile: relative(opts, promptFile), prompt };
+  fs.writeFileSync(testFile, flowToE2ETest(doc, { flowFile: relative(opts, flowFile) }));
+  return { slug: doc.slug, flowFile: relative(opts, flowFile), promptFile: relative(opts, promptFile), prompt, testFile: relative(opts, testFile) };
 }
 
 export function readFlow(opts: FlowtapeServerOptions, slug: string): FlowDocument | null {

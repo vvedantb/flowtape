@@ -15,6 +15,8 @@ describe('saveFlow', () => {
     const saved = saveFlow(opts, makeFlow(LOGIN_EVENTS));
     expect(saved).toMatchObject({ slug: 'login-and-add-note', flowFile: '.flowtape/flows/login-and-add-note.json', promptFile: '.flowtape/prompts/login-and-add-note.md' });
     expect(fs.readFileSync(path.join(root, saved.promptFile), 'utf8')).toBe(saved.prompt);
+    expect(saved.testFile).toBe('.flowtape/e2e/login-and-add-note.e2e.ts');
+    expect(fs.readFileSync(path.join(root, saved.testFile), 'utf8')).toContain('test("Login and add note"');
     expect(saved.prompt).toContain('Source: `.flowtape/flows/login-and-add-note.json`');
     expect(readFlow(opts, 'login-and-add-note')?.events).toHaveLength(LOGIN_EVENTS.length);
     expect(listFlows(opts)).toEqual([{ slug: 'login-and-add-note', name: 'Login and add note', updatedAt: '2026-09-27T10:00:00.000Z', events: LOGIN_EVENTS.length }]);

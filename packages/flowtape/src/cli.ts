@@ -1,13 +1,18 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import path from 'node:path';
+import { flowToE2ETest } from './e2e-test';
+import { FlowDocumentSchema } from './schemas';
 import { findHistoryDir, listHistory } from './server';
 
 const USAGE = `Usage: flowtape history [path]
        flowtape record <url> [--out file] [--headed] [--name name]
        flowtape replay <file> [--jev | --no-jev] [--threshold <0-1>] [--headed]
+       flowtape e2e <flow.json> [--out file] [--session name]
 
 record   Open <url> in Chromium and save a replay script (default .flowtape/scripts/<name>.json). Ctrl+C stops.
 replay   Replay a script with Playwright. Jev visual fallback runs when TYPESAFE_API_KEY is set, unless --no-jev.
+e2e      Write a test for the e2e runner from a saved flow (default .flowtape/e2e/<slug>.e2e.ts). --session names a sign-in session from e2e.config.ts.
 history  List recent session history files in the nearest .flowtape/history/ at or above [path] (default: cwd).`;
 
 function formatSize(bytes: number): string {
@@ -74,6 +79,16 @@ async function main(argv: string[]): Promise<number> {
     if (flag(args, 'jev') && flag(args, 'no-jev')) return fail('Use --jev or --no-jev, not both.');
     const { replayCommand } = await import('./script/replay');
     return replayCommand({ file, jev: flag(args, 'jev') ? true : flag(args, 'no-jev') ? false : undefined, threshold, headed: flag(args, 'headed') });
+  }
+  if (command === 'e2e') {
+    const [file] = positional(args, ['out', 'session']);
+    if (!file) return fail('e2e needs a flow file.');
+    const doc = FlowDocumentSchema.parse(JSON.parse(fs.readFileSync(file, 'utf8')));
+    const out = path.resolve(option(args, 'out') ?? path.join(path.dirname(path.dirname(path.resolve(file))), 'e2e', `${doc.slug}.e2e.ts`));
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, flowToE2ETest(doc, { session: option(args, 'session'), flowFile: path.relative(process.cwd(), path.resolve(file)) }));
+    console.log(`Saved ${path.relative(process.cwd(), out)}`);
+    return 0;
   }
   console.log(USAGE);
   return command === undefined || command === '--help' || command === '-h' ? 0 : 1;
