@@ -1,6 +1,6 @@
 {
   "name": "@vvedantb/flowtape",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Record user flows in your running Vite or Next.js app and export them as Claude Code prompts, or as replay scripts for Playwright.",
   "type": "module",
   "license": "MIT",
