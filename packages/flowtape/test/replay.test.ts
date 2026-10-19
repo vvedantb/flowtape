@@ -168,3 +168,51 @@ describe('replayScript', () => {
     expect(result.error?.reason).toMatch(/Expected outcome not reached/);
   });
 });
+
+describe('replay screenshots', () => {
+  const typeSecret: ReplayStep = {
+    type: 'type',
+    ts: 0,
+    url: 'http://app.test/',
+    selectors: [{ strategy: 'css', value: '#pw' }],
+    redacted: true,
+    length: 8,
+    name: 'Password',
+    inputType: 'password',
+    expected: { kind: 'none' },
+  };
+  const missing: ReplayStep = { ...clickStep, selectors: [{ strategy: 'css', value: '#gone' }], screenshots: undefined };
+
+  it('masks secret fields in every screenshot and marks each field it filled from a secret', async () => {
+    const { page } = fakePage({ 'css #pw': 1 });
+    const styles: Array<string | undefined> = [];
+    const marked: unknown[] = [];
+    page.screenshot = async (options) => {
+      styles.push(options?.style);
+      return png;
+    };
+    page.evaluate = async (_fn, arg) => void marked.push(arg);
+    const result = await replayScript(script(typeSecret, missing), { ...base, page, env: { FLOWTAPE_PASSWORD: 'Hunter2-Secret!' } });
+    expect(result.ok).toBe(false);
+    expect(styles.length).toBeGreaterThanOrEqual(3);
+    for (const style of styles) expect(style).toMatch(/input\[type="password"\].*\[data-flowtape-secret\].*background: #ff00ff/);
+    expect(marked).toContain('data-flowtape-secret');
+  });
+
+  it('takes no screenshot and never calls Jev on a page in allowlist mode', async () => {
+    const { page } = fakePage({ 'css [data-flowtape-allowlist]': 1 });
+    let shots = 0;
+    page.screenshot = async () => {
+      shots++;
+      return png;
+    };
+    const { jev, ask } = mockJev(0.95);
+    const result = await replayScript(script(missing), { ...base, page, jev });
+    expect(result.ok).toBe(false);
+    expect(shots).toBe(0);
+    expect(ask).not.toHaveBeenCalled();
+    expect(result.error?.reason).toMatch(/Jev is off on this page: it is in allowlist mode.*\(no screenshots: the page is in allowlist mode\)/);
+    expect(result.error?.before).toBeUndefined();
+    expect(result.error?.after).toBeUndefined();
+  });
+});

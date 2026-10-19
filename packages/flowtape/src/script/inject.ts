@@ -3,7 +3,7 @@
  * Reports each user action to Node through the `__flowtapeEmit` binding. Never imported by Node code.
  */
 import { INTERACTIVE, UI_ATTR, isField, isTextEntry, nameFor, selectorsFor } from '../recorder';
-import { isMaskedElement, redactInput } from '../redact';
+import { isMaskedElement, redactInput, watchSecretFields } from '../redact';
 import type { SelectorCandidate } from '../recorder';
 
 export interface PagePayload {
@@ -18,10 +18,18 @@ export interface PagePayload {
   name?: string;
   key?: string;
   scroll?: { x: number; y: number };
+  /** Key of this event's element in `__flowtapeTargets`. Steps queue in Node, so a single "last target" would be stale. */
+  targetId?: number;
 }
 
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-type Host = Window & { __flowtapeMask?: (on: boolean) => void; __flowtapeEmit?: (payload: PagePayload) => Promise<void>; __flowtapeTarget?: Element | null; __flowtapeInstalled?: boolean };
+type Host = Window & {
+  __flowtapeMask?: (on: boolean) => void;
+  __flowtapeIsMasked?: (el: Element) => boolean;
+  __flowtapeEmit?: (payload: PagePayload) => Promise<void>;
+  __flowtapeTargets?: Map<number, Element>;
+  __flowtapeInstalled?: boolean;
+};
 
 const DEBOUNCE_MS = 400;
 const SCROLL_MS = 250;
@@ -35,9 +43,12 @@ function install(host: Host) {
   let scrollTimer: ReturnType<typeof setTimeout> | undefined;
 
   const isUi = (el: Element) => !!el.closest(`[${UI_ATTR}]`);
-  const emit = (el: Element | null, payload: Omit<PagePayload, 'url' | 'viewport' | 'selectors'>) => {
-    host.__flowtapeTarget = el;
-    void send({ ...payload, url: location.href, viewport: { width: innerWidth, height: innerHeight }, selectors: el ? selectorsFor(el) : [] });
+  const targets = (host.__flowtapeTargets = new Map<number, Element>());
+  let nextTarget = 0;
+  const emit = (el: Element | null, payload: Omit<PagePayload, 'url' | 'viewport' | 'selectors' | 'targetId'>) => {
+    const targetId = el ? ++nextTarget : undefined;
+    if (el && targetId) targets.set(targetId, el);
+    void send({ ...payload, url: location.href, viewport: { width: innerWidth, height: innerHeight }, selectors: el ? selectorsFor(el) : [], targetId });
   };
 
   const emitValue = (el: Field) => {
@@ -103,6 +114,9 @@ function install(host: Host) {
 
 // Screenshots hide masked fields: the recorder marks them, shoots with a mask, then unmarks.
 const MASKED_ATTR = 'data-flowtape-shot-mask';
+(window as Host).__flowtapeIsMasked = isMaskedElement;
+// A password field stays masked after a "show password" toggle switches it to text.
+if (document.documentElement) watchSecretFields(document);
 (window as Host).__flowtapeMask = (on) => {
   for (const el of Array.from(document.querySelectorAll('input, textarea, select'))) {
     if (!on) el.removeAttribute(MASKED_ATTR);

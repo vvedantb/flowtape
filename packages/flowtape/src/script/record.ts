@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page, Request, Response } from 'playwright';
-import { REDACTED, scrubText } from '../redact';
+import { ALLOWLIST_ATTR, REDACTED, SECRET_SCREENSHOT_SELECTOR, scrubText } from '../redact';
 import { slugify } from '../schemas';
 import type { PagePayload } from './inject';
 import { ReplayScriptSchema, SCRIPT_VERSION, type ReplayScript, type ReplayStep } from './schema';
@@ -26,9 +26,15 @@ export interface ScriptRecording {
   stop(): Promise<ReplayScript>;
 }
 
-const MASK_SELECTOR = '[data-flowtape-shot-mask], [data-flowtape-mask], [data-flowtape-mask] *';
+const MASK_SELECTOR = `[data-flowtape-shot-mask], ${SECRET_SCREENSHOT_SELECTOR}`;
 
-type PageHost = { __flowtapeMask?: (on: boolean) => void; __flowtapeTarget?: Element | null };
+type PageHost = {
+  __flowtapeMask?: (on: boolean) => void;
+  __flowtapeIsMasked?: (el: Element) => boolean;
+  __flowtapeTargets?: Map<number, Element>;
+  /** The element to crop for the step being shot. */
+  __flowtapeCrop?: Element;
+};
 
 function loadInject(): string {
   return fs.readFileSync(new URL('./inject.global.js', import.meta.url), 'utf8');
@@ -116,14 +122,36 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
   };
 
   async function shoot(payload: PagePayload): Promise<ReplayStep['screenshots']> {
-    // A secret must never reach a screenshot, so redacted steps get none.
-    if (payload.redacted || payload.type === 'scroll') return undefined;
+    const skip = payload.redacted || payload.type === 'scroll';
+    // One round trip: take this event's own element out of the page's map, read allowlist mode, decide whether
+    // the element may be cropped, and mark masked fields. Steps queue up, so every extra trip delays the next one.
+    const plan = await page
+      .evaluate(
+        ({ id, skip, allowlist, selector }) => {
+          const host = window as unknown as PageHost;
+          const el = id === undefined ? undefined : host.__flowtapeTargets?.get(id);
+          if (id !== undefined) host.__flowtapeTargets?.delete(id);
+          const blocked = skip || !!document.querySelector(`[${allowlist}]`);
+          if (blocked) return { shoot: false, crop: false, cropMask: false };
+          host.__flowtapeMask?.(true);
+          // A masked target (a revealed password, a masked area) gets no crop: the crop would be all secret.
+          const crop = !!el && !(host.__flowtapeIsMasked?.(el) ?? true);
+          host.__flowtapeCrop = crop ? el : undefined;
+          // Most targets (buttons, links) hold no secret field, and a mask makes each crop slower.
+          const cropMask = crop && !!el?.querySelector(selector);
+          return { shoot: true, crop, cropMask };
+        },
+        { id: payload.targetId, skip, allowlist: ALLOWLIST_ATTR, selector: MASK_SELECTOR },
+      )
+      .catch(() => ({ shoot: false, crop: false, cropMask: false }));
+    // A secret never reaches a screenshot: redacted steps get none, and allowlist mode none at all.
+    if (!plan.shoot) return undefined;
     const shots: NonNullable<ReplayStep['screenshots']> = {};
     try {
-      await page.evaluate(() => (window as unknown as PageHost).__flowtapeMask?.(true));
-      shots.page = b64(await page.screenshot({ type: 'png', scale: 'css', mask: [page.locator(MASK_SELECTOR)], timeout: 3000 }));
-      const target = (await page.evaluateHandle(() => (window as unknown as PageHost).__flowtapeTarget ?? null)).asElement();
-      if (target) shots.target = b64(await target.screenshot({ type: 'png', scale: 'css', timeout: 1000 }));
+      const mask = [page.locator(MASK_SELECTOR)];
+      shots.page = b64(await page.screenshot({ type: 'png', scale: 'css', mask, timeout: 3000 }));
+      const target = plan.crop ? (await page.evaluateHandle(() => (window as unknown as PageHost).__flowtapeCrop ?? null)).asElement() : null;
+      if (target) shots.target = b64(await target.screenshot({ type: 'png', scale: 'css', mask: plan.cropMask ? mask : [], timeout: 1000 }));
     } catch {
       // The page may be navigating away. A step without screenshots still replays.
     } finally {

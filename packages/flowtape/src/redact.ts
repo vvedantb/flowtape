@@ -10,12 +10,26 @@ export const MASK_ATTR = 'data-flowtape-mask';
 export const ALLOWLIST_ATTR = 'data-flowtape-allowlist';
 /** Marks a field or area whose values may be stored in allowlist mode. */
 export const SAFE_ATTR = 'data-flowtape-safe';
+/** Set by `watchSecretFields` on a field that was ever `type="password"`, so a "show password" toggle cannot unmask it. */
+export const SECRET_ATTR = 'data-flowtape-secret';
+
+/**
+ * Screenshot mask for pages that run no flowtape script (replay): fields and areas known to be secret from markup alone.
+ * Label- and shape-based masking needs `isMaskedElement`, so replay also masks every field it filled from a secret.
+ */
+export const SECRET_SCREENSHOT_SELECTOR = [
+  'input[type="password"]',
+  `[${SECRET_ATTR}]`,
+  'input[autocomplete="one-time-code"]',
+  `[${MASK_ATTR}]`,
+  `[${MASK_ATTR}] *`,
+].join(', ');
 /** Replaces secrets found inside free text. */
 export const REDACTED = '[REDACTED]';
 
 /** Field names, ids, labels and autocomplete hints that mean "secret" or "personal identifier". */
 const SENSITIVE_NAME =
-  /pass(word|wd|code|phrase)?|pwd|secret|token|api[-_]?key|private[-_]?key|credential|ssn|social[-_]?security|cvv|cvc|card[-_]?number|cc-(number|csc)|one-time-code|otp|(^|[^a-z])pin([^a-z]|$)|(^|[^a-z])dob([^a-z]|$)|date[-_\s]?of[-_\s]?birth|birth[-_\s]?(date|day)|bday|nhs[-_\s]?(number|no\b|num)|national[-_\s]?insurance|(^|[^a-z])ni[-_\s]?(number|no\b)/i;
+  /pass(word|wd|code|phrase)?|pwd|secret|token|api[-_]?key|private[-_]?key|credential|ssn|social[-_]?security|cvv|cvc|card[-_]?number|cc-(number|csc)|one-time-code|otp|(^|[^a-z])pin([^a-z]|$)|(^|[^a-z])dob([^a-z]|$)|date[-_\s]?of[-_\s]?birth|birth[-_\s]?(date|day)|bday|nhs[-_\s]?(number|no\b|num)|(verification|security|auth(entication)?|access|confirmation|backup|recovery)[-_\s]?codes?|2fa|mfa|two[-_\s]?(factor|step)|totp|one[-_\s]?time|national[-_\s]?insurance|(^|[^a-z])ni[-_\s]?(number|no\b)/i;
 
 /** NHS number check digit (modulus 11). A 10-digit run that fails it is not an NHS number. */
 export function isNhsNumber(digits: string): boolean {
@@ -39,6 +53,8 @@ const PERSONAL_PATTERNS: Array<[RegExp, (match: string) => string]> = [
   [/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g, (match) => (RESERVED_EMAIL_DOMAIN.test(match) ? match : REDACTED)],
   // UK postcode, for example `SW1A 1AA` or `m1 1ae`.
   [/\b(?:GIR ?0AA|[A-PR-UWYZ][A-HK-Y]?\d[A-Z\d]? ?\d[ABD-HJLNP-UW-Z]{2})\b/gi, () => REDACTED],
+  // 2FA setup key (TOTP secret): base32, 16+ characters with at least one digit 2-7, often grouped in fours.
+  [/(?<![A-Za-z0-9])(?=(?:[A-Z2-7] ?){16})(?=[A-Z ]*[2-7])(?:[A-Z2-7]{4} ?){3,}[A-Z2-7]{4,}=*(?![A-Za-z0-9])/g, () => REDACTED],
   // UK mobile number.
   [/(?<![\d+])(?:\+44 ?7\d{3}|07\d{3}) ?\d{3} ?\d{3}(?!\d)/g, () => REDACTED],
 ];
@@ -112,10 +128,28 @@ function labelOf(el: Element): string | undefined {
   return [el.getAttribute('aria-label'), ...labels.map((label) => label.textContent)].filter(Boolean).join(' ') || undefined;
 }
 
+/**
+ * A one-time code field that says nothing about itself in its name: a short numeric field whose label or
+ * placeholder mentions a code, for example "Verification code" with `inputmode="numeric" maxlength="6"`.
+ */
+function isCodeShaped(el: Element): boolean {
+  if (el.tagName !== 'INPUT') return false;
+  const max = Number(el.getAttribute('maxlength'));
+  const short = max >= 4 && max <= 8;
+  const numeric = el.getAttribute('inputmode') === 'numeric' || /^\[0-9\]|\\d/.test(el.getAttribute('pattern') ?? '');
+  const mentionsCode = /\bcodes?\b|\bpin\b/i.test(`${labelOf(el) ?? ''} ${el.getAttribute('placeholder') ?? ''}`);
+  return mentionsCode && (short || numeric);
+}
+
 /** Record-time check: must this element's value (or, for a non-field, its text) be withheld? */
 export function isMaskedElement(el: Element): boolean {
   if (el.closest(`[${MASK_ATTR}]`)) return true;
-  if ((el.getAttribute('type') ?? '').toLowerCase() === 'password') return true;
+  if (el.hasAttribute(SECRET_ATTR)) return true;
+  if ((el.getAttribute('type') ?? '').toLowerCase() === 'password') {
+    el.setAttribute(SECRET_ATTR, '');
+    return true;
+  }
+  if (FIELD_TAGS.has(el.tagName) && isCodeShaped(el)) return true;
   if (['name', 'id', 'autocomplete'].some((attr) => isSensitiveName(el.getAttribute(attr)))) return true;
   if (FIELD_TAGS.has(el.tagName) && isSensitiveName(labelOf(el))) return true;
   // Allowlist mode: nothing inside is stored unless it is marked safe. Control names are kept.
@@ -176,4 +210,31 @@ export function redactFlow(doc: FlowDocument): FlowDocument {
     events: doc.events.map(redactEvent),
     meta: doc.meta && { ...doc.meta, userAgent: scrubOptional(doc.meta.userAgent) },
   };
+}
+
+/**
+ * Mark every password field now and whenever one appears, and keep the mark when a "show password" toggle
+ * switches it to `type="text"`. Returns a function that stops watching. Browser only.
+ */
+export function watchSecretFields(root: Document): () => void {
+  const mark = (el: Element) => {
+    if (el instanceof HTMLInputElement && el.type === 'password') el.setAttribute(SECRET_ATTR, '');
+  };
+  root.querySelectorAll('input[type="password"]').forEach(mark);
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      if (record.type === 'attributes') {
+        // The old value is what matters: a field that was a password field stays secret after it is revealed.
+        if (record.oldValue?.toLowerCase() === 'password' && record.target instanceof Element) record.target.setAttribute(SECRET_ATTR, '');
+        else if (record.target instanceof Element) mark(record.target);
+      }
+      record.addedNodes.forEach((node) => {
+        if (!(node instanceof Element)) return;
+        mark(node);
+        node.querySelectorAll('input[type="password"]').forEach(mark);
+      });
+    }
+  });
+  observer.observe(root.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['type'], attributeOldValue: true });
+  return () => observer.disconnect();
 }

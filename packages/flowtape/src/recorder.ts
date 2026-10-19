@@ -1,4 +1,4 @@
-import { isMaskedElement, redactEvent, redactHistoryEvent, scrubText } from './redact';
+import { isMaskedElement, redactEvent, redactHistoryEvent, scrubText, watchSecretFields } from './redact';
 import { z } from 'zod';
 import { FLOW_VERSION, FlowEventSchema, slugify } from './schemas';
 import type { AssertEvent, FlowDocument, FlowEvent, FlowMeta, HistoryEvent, InputEvent, NavigateEvent } from './types';
@@ -375,6 +375,8 @@ export function createCapture(options: CaptureOptions = {}): Capture {
   const attach = () => {
     const { pushState, replaceState } = history;
     let attached = true;
+    // A password field stays masked after a "show password" toggle switches it to text.
+    const unwatchSecrets = watchSecretFields(document);
     const patchedPush = function (this: History, ...args: Parameters<History['pushState']>) {
       pushState.apply(this, args);
       if (attached) checkUrl();
@@ -396,6 +398,7 @@ export function createCapture(options: CaptureOptions = {}): Capture {
     window.addEventListener('unhandledrejection', onRejection);
     return () => {
       attached = false;
+      unwatchSecrets();
       // Leave someone else's later patch in place; ours is inert once detached.
       if (history.pushState === patchedPush) history.pushState = pushState;
       if (history.replaceState === patchedReplace) history.replaceState = replaceState;

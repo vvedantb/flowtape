@@ -41,6 +41,21 @@ const login = `<!doctype html><meta charset="utf-8"><title>Signing in</title>
   fetch('/slow').then(() => { location.href = '/callback?ticket=one-time-ticket'; });
 </script>`;
 
+// Secrets that field-level masking misses: a password revealed by a "Show" toggle (no telling name or label),
+// a 2FA code in a plain text field, and a 2FA setup key printed on the page. Synthetic values only.
+const secrets = `<!doctype html><meta charset="utf-8"><title>Secrets</title><body>
+<p data-testid="pw-row" style="width:600px"><input id="f9" data-testid="pw" type="password" placeholder="Enter your password" style="width:200px;height:24px">
+<button id="reveal" data-testid="reveal" type="button">Show</button></p>
+<p><label for="f7">Verification code</label> <input id="f7" data-testid="code" inputmode="numeric" maxlength="6" style="width:200px;height:24px"></p>
+<p data-testid="setup-key">Setup key: JBSWY3DPEHPK3PXP</p>
+<button data-testid="verify" type="button">Verify</button>
+<script>
+  document.getElementById('reveal').addEventListener('click', () => {
+    const pw = document.getElementById('f9');
+    pw.type = pw.type === 'password' ? 'text' : 'password';
+  });
+</script>`;
+
 /**
  * Static fixture on a random local port. `/?variant=mutated` serves the refactored page.
  * `/login` redirects to `/?from=login` through `/callback`. `/magic?token=…` redirects to `/?from=magic`.
@@ -73,6 +88,11 @@ export async function startFixture(): Promise<{ url: string; close: () => Promis
 <input data-testid="a" aria-label="A"><input data-testid="b" aria-label="B"><input data-testid="c" aria-label="C">
 <button data-testid="go-slow" type="button" onclick="location.href='/slow-page'">Go slow</button>
 <button data-testid="noop" type="button">Nothing</button>`);
+      return;
+    }
+    if (url.pathname === '/secrets') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.end(url.searchParams.has('allowlist') ? secrets.replace('<body>', '<body data-flowtape-allowlist>') : secrets);
       return;
     }
     if (url.pathname === '/callback') {
