@@ -89,6 +89,33 @@ function locator(target: Target, kind: 'action' | 'field'): string {
   return narrow(`browser.locator(${str(target.selector)})`);
 }
 
+/** Short text with a digit: a price, a rate, a count. Checked with toHaveText, where "£1,250" must not pass for "£11,250". */
+function isExactValue(text: string): boolean {
+  return /\d/.test(text) && text.length <= 40;
+}
+
+/** The locator that rows of the same kind share: the recorded test id or CSS strategy, never narrowed. */
+function sharedLocator(event: Extract<FlowEvent, { type: 'assert' }>): string {
+  const shared = event.locators?.find((l) => (l.strategy === 'test-id' || l.strategy === 'css') && !l.value.includes(REDACTED));
+  if (shared?.strategy === 'test-id') return `screen.getByTestId(${str(shared.value)})`;
+  if (shared) return `browser.locator(${str(shared.value)})`;
+  const testId = TEST_ID.exec(event.selector)?.[1];
+  return testId ? `screen.getByTestId(${str(testId)})` : `browser.locator(${str(event.selector)})`;
+}
+
+function countOrGoneLines(event: Extract<FlowEvent, { type: 'assert' }>): string[] {
+  const shared = sharedLocator(event);
+  if (event.check === 'count') {
+    return event.count === undefined ? ['// TODO: the recorded count is missing. Add a toHaveCount check.'] : [`await expect(${shared}).toHaveCount(${event.count});`];
+  }
+  // Gone: a locator that named this element (its own text or name) must now match nothing.
+  const own = event.locators?.find((l) => (l.strategy === 'text' || l.strategy === 'role' || l.strategy === 'label') && l.matches === 1 && !l.value.includes(REDACTED));
+  const ownCode = own && code(own);
+  if (ownCode) return [`await expect(${ownCode}).toBeHidden();`];
+  if (event.count !== undefined) return [`// The element had no unique text or name, so this checks there is one fewer like it.`, `await expect(${shared}).toHaveCount(${Math.max(0, event.count - 1)});`];
+  return ['// TODO: check that the element is gone.'];
+}
+
 function pathOf(url: string, origin: string | undefined): string {
   try {
     const parsed = new URL(url, origin);
@@ -132,6 +159,7 @@ function stepLines(event: FlowEvent, index: number, events: FlowEvent[], origin:
       return field ? [`await ${locator(field, 'field')}.press("Enter");`] : ['// TODO: the recording submitted a form here without a click. Submit it.'];
     }
     case 'assert': {
+      if (event.check === 'count' || event.check === 'gone') return countOrGoneLines(event);
       const target = locator(event, 'action');
       const lines = [`await expect(${target}).toBeVisible();`];
       const check = checkableText(event.text);
@@ -140,7 +168,9 @@ function stepLines(event: FlowEvent, index: number, events: FlowEvent[], origin:
       else if (check?.partial && isValue) lines.push('// TODO: part of the recorded value was redacted. Add a check for a synthetic value.');
       else if (check) {
         if (check.partial) lines.push('// Part of the recorded text was redacted. This checks the rest.');
-        lines.push(`await expect(${target}).${isValue ? 'toHaveValue' : 'toContainText'}(${str(check.text)});`);
+        // A short value with a number in it (£1,250.00/week, 3 placements) must match exactly, not as a substring.
+        const exact = !check.partial && isExactValue(check.text);
+        lines.push(`await expect(${target}).${isValue ? 'toHaveValue' : exact ? 'toHaveText' : 'toContainText'}(${str(check.text)});`);
       }
       return lines;
     }

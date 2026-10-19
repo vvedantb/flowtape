@@ -12,6 +12,10 @@ export interface RecorderSnapshot {
   startUrl?: string;
   /** True between `assertNext()` and the click that picks the element. */
   asserting: boolean;
+  /** What the next pick checks. */
+  check: AssertCheck;
+  /** A `gone` check was picked and waits for its element to leave the page. */
+  waitingGone: boolean;
 }
 
 export interface Recorder {
@@ -22,7 +26,8 @@ export interface Recorder {
   subscribe(listener: () => void): () => void;
   getSnapshot(): RecorderSnapshot;
   /** While recording: the next click on the page records an assertion on that element instead of a click. */
-  assertNext(): void;
+  /** Called again while armed, it switches what the pick checks. Default `text`. */
+  assertNext(check?: AssertCheck): void;
   cancelAssert(): void;
 }
 
@@ -237,12 +242,15 @@ function nthOf(el: Element, selector: string): number | undefined {
 
 const MAX_ASSERT_TEXT = 200;
 
+export type AssertCheck = 'text' | 'count' | 'gone';
+
 /** The element the user picked in assert mode. A masked element gives a visibility-only check. */
-function assertEvent(picked: Element, ts: number): AssertEvent {
+function assertEvent(picked: Element, ts: number, check: AssertCheck = 'text'): AssertEvent {
   const el = picked.closest('input, textarea, select') ?? picked;
   const masked = isMaskedElement(el);
   const text = masked ? undefined : isField(el) ? el.value : clean(el.textContent);
   const selector = selectorFor(el);
+  const locators = locatorsFor(el);
   return {
     type: 'assert',
     ts,
@@ -251,7 +259,10 @@ function assertEvent(picked: Element, ts: number): AssertEvent {
     name: masked ? undefined : nameFor(el),
     text: text ? text.slice(0, MAX_ASSERT_TEXT) : undefined,
     nth: nthOf(el, selector),
-    locators: locatorsFor(el),
+    locators,
+    check: check === 'text' ? undefined : check,
+    // Elements like this one: the test id or CSS strategy, which a list's rows share.
+    count: check === 'text' ? undefined : locators.find((l) => l.strategy === 'test-id' || l.strategy === 'css')?.matches,
   };
 }
 
@@ -531,8 +542,8 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
   const listeners = new Set<() => void>();
   const stored = persist ? recordingStore.read() : null;
   let snapshot: RecorderSnapshot = stored
-    ? { recording: stored.recording, events: stored.events, startUrl: stored.startUrl, asserting: false }
-    : { recording: false, events: [], asserting: false };
+    ? { recording: stored.recording, events: stored.events, startUrl: stored.startUrl, asserting: false, check: 'text', waitingGone: false }
+    : { recording: false, events: [], asserting: false, check: 'text', waitingGone: false };
   let startedAt = stored?.startedAt ?? 0;
   let unsubscribe: (() => void) | null = null;
   const notify = notifyLater(listeners);
@@ -565,12 +576,31 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     event.stopImmediatePropagation();
     return target;
   };
+  const record = (event: AssertEvent) => set({ events: appendEvent(snapshot.events, rebase(redactEvent(event), startedAt)) });
+  let stopWaiting = () => {};
   const onAssertClick = (event: MouseEvent) => {
     const target = swallow(event);
     if (!target) return;
+    const { check } = snapshot;
     disarm();
     capture.flush();
-    set({ events: appendEvent(snapshot.events, rebase(redactEvent(assertEvent(target, capture.now())), startedAt)) });
+    const picked = assertEvent(target, capture.now(), check);
+    if (check !== 'gone') return record(picked);
+    // The check belongs after the action that removes the element, so it is recorded when the element goes.
+    const el = target.closest('input, textarea, select') ?? target;
+    const gone = () => !el.isConnected || (typeof el.checkVisibility === 'function' && !el.checkVisibility());
+    const observer = new MutationObserver(() => {
+      if (!gone()) return;
+      stopWaiting();
+      record({ ...picked, ts: capture.now() });
+    });
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
+    stopWaiting = () => {
+      observer.disconnect();
+      stopWaiting = () => {};
+      set({ waitingGone: false });
+    };
+    set({ waitingGone: true });
   };
   const onAssertKey = (event: KeyboardEvent) => {
     if (event.key === 'Escape') disarm();
@@ -602,6 +632,7 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     stop() {
       if (!snapshot.recording) return;
       disarm();
+      stopWaiting();
       capture.flush();
       unsubscribe?.();
       unsubscribe = null;
@@ -611,14 +642,19 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     clear() {
       set({ events: [], startUrl: undefined });
     },
-    assertNext() {
-      if (!snapshot.recording || snapshot.asserting) return;
+    assertNext(check = 'text') {
+      if (!snapshot.recording) return;
+      if (snapshot.asserting) return set({ check });
+      stopWaiting();
       window.addEventListener('click', onAssertClick, true);
       window.addEventListener('keydown', onAssertKey, true);
       ASSERT_SWALLOWED.forEach((type) => window.addEventListener(type, swallow, true));
-      set({ asserting: true });
+      set({ asserting: true, check });
     },
-    cancelAssert: () => disarm(),
+    cancelAssert: () => {
+      disarm();
+      stopWaiting();
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

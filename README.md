@@ -115,7 +115,15 @@ Clicks inside the overlay are ignored. Text typing is debounced, so each field r
 
 ## Assertions while recording
 
-While you record, click **Assert**, then click an element on the page. flowtape records a check (the element is visible and shows its current text, or a field's current value) instead of a click, and the app never receives that click. **Esc** or **Cancel** stops picking. A masked element gives a visibility-only check, so its text is never stored. Recorded checks appear in the prompt as **Check:** steps, and they replace the generic final-state `TODO`.
+While you record, click **Assert**, choose what to check, then click an element on the page. The app never receives that click. **Esc** or **Cancel** stops picking.
+
+| Check | Click | Recorded |
+| --- | --- | --- |
+| **Text** (default) | the element | It is visible and shows its current text, or a field's current value. A short value with a number in it (£1,250.00/week, 3 placements) is checked exactly, so "£11,250" cannot pass for "£1,250". |
+| **Count** | one of the rows | How many elements match like it (its test id or CSS). |
+| **Gone** | the element that should go, then do the action that removes it | It left the page. The overlay waits, and records the check when the element goes, right after the action that removed it. |
+
+A masked element gives a visibility-only check, so its text is never stored. Recorded checks appear in the prompt as **Check:** steps and replace the generic final-state `TODO`. In the e2e export they become `toContainText` or `toHaveText`, `toHaveCount`, and `toBeHidden`.
 
 ## Session history
 

@@ -72,6 +72,12 @@ export const AssertEventSchema = z.object({
   name: z.string().optional(),
   /** Visible text, or a field's value. Absent for masked elements, so the check is visibility only. */
   text: z.string().optional(),
+  /**
+   * What is checked. `text` (the default): the element is visible and shows `text`. `count`: `count` elements match
+   * like it. `gone`: it left the page; recorded when it went, `count` is how many matched before.
+   */
+  check: z.enum(['text', 'count', 'gone']).optional(),
+  count: z.number().int().nonnegative().optional(),
   /** Position among the elements that match `selector`, recorded only when more than one does. */
   nth: z.number().int().nonnegative().optional(),
   locators,

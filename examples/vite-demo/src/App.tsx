@@ -101,6 +101,9 @@ function Notes() {
           Add note
         </button>
       </form>
+      <button data-testid="note-remove-last" type="button" onClick={() => setNotes((current) => current.slice(0, -1))} style={styles.link}>
+        Remove last note
+      </button>
       <button data-testid="sign-out" type="button" onClick={() => navigate('/')} style={styles.link}>
         Sign out
       </button>

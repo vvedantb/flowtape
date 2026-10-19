@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flowToPrompt } from '../src/prompt';
+import { flowToE2ETest } from '../src/e2e-test';
 import { createCapture, createFlowDocument, createRecorder, type Recorder } from '../src/recorder';
 
 describe('assert mode', () => {
@@ -99,5 +100,69 @@ describe('assert prompt with redacted text', () => {
     );
     expect(prompt).toContain('is visible and shows text that includes `Seen at` (the rest was redacted).');
     expect(prompt).toContain('is visible. Its recorded text was redacted, so check only that it is visible.');
+  });
+});
+
+describe('count, gone and exact checks', () => {
+  let recorder: Recorder;
+  beforeEach(() => {
+    sessionStorage.clear();
+    document.body.innerHTML = `
+      <ul><li data-testid="row">Seen at clinic</li><li data-testid="row">Seen at home</li><li data-testid="row">Water the plants</li></ul>
+      <p data-testid="fee">£1,250.00/week</p>
+      <button id="remove" type="button">Remove last</button>`;
+    document.getElementById('remove')?.addEventListener('click', () => document.querySelector('li:last-child')?.remove());
+    recorder = createRecorder({ capture: createCapture({ debounceMs: 0 }), persist: false });
+    recorder.start();
+  });
+  afterEach(() => recorder.stop());
+
+  const click = (selector: string) => (document.querySelector(selector) as HTMLElement).click();
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('Count records how many rows match like the picked one', () => {
+    recorder.assertNext('count');
+    click('li:first-child');
+    expect(recorder.getSnapshot().events.at(-1)).toMatchObject({ type: 'assert', check: 'count', count: 3 });
+  });
+
+  it('Gone waits for the element to leave, and records the check after the action that removed it', async () => {
+    recorder.assertNext();
+    recorder.assertNext('gone'); // switching mode while armed
+    click('li:last-child');
+    expect(recorder.getSnapshot()).toMatchObject({ asserting: false, waitingGone: true });
+    expect(recorder.getSnapshot().events.filter((e) => e.type === 'assert')).toHaveLength(0);
+    click('#remove');
+    await flush();
+    const types = recorder.getSnapshot().events.map((e) => (e.type === 'assert' ? `assert:${e.check}` : e.type));
+    expect(types.slice(-2)).toEqual(['click', 'assert:gone']);
+    expect(recorder.getSnapshot().waitingGone).toBe(false);
+  });
+
+  it('Cancel drops a waiting Gone check', async () => {
+    recorder.assertNext('gone');
+    click('li:last-child');
+    recorder.cancelAssert();
+    click('#remove');
+    await flush();
+    expect(recorder.getSnapshot().events.filter((e) => e.type === 'assert')).toHaveLength(0);
+  });
+
+  it('generates toHaveCount, toBeHidden and an exact toHaveText for a price', async () => {
+    recorder.assertNext('count');
+    click('li:first-child');
+    recorder.assertNext();
+    click('[data-testid="fee"]');
+    recorder.assertNext('gone');
+    click('li:last-child');
+    click('#remove');
+    await flush();
+    const out = flowToE2ETest(createFlowDocument({ name: 'Checks', startUrl: 'http://localhost:5173/', events: recorder.getSnapshot().events }));
+    expect(out).toContain('await expect(screen.getByTestId("row")).toHaveCount(3);');
+    expect(out).toContain('await expect(screen.getByTestId("fee")).toHaveText("£1,250.00/week");');
+    expect(out).toContain('await expect(screen.getByText("Water the plants")).toBeHidden();');
+    const prompt = flowToPrompt(createFlowDocument({ name: 'Checks', startUrl: 'http://localhost:5173/', events: recorder.getSnapshot().events }));
+    expect(prompt).toContain('**Check:** there are exactly 3 elements like');
+    expect(prompt).toContain('is no longer on the page after the previous step.');
   });
 });

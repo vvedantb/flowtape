@@ -1,7 +1,7 @@
 export { FlowtapeOverlay, DEFAULT_ENDPOINT } from './client/overlay';
 export type { FlowtapeOverlayProps } from './client/overlay';
 export { RECORDING_KEY, createCapture, createRecorder, createFlowDocument, selectorFor, roleFor, nameFor, appendEvent, rebase, selectorsFor, UI_ATTR } from './recorder';
-export type { SelectorCandidate, SelectorStrategy, Capture, CaptureOptions, Recorder, RecorderOptions, RecorderSnapshot, CreateFlowInput } from './recorder';
+export type { AssertCheck, LocatorCandidate, SelectorCandidate, SelectorStrategy, Capture, CaptureOptions, Recorder, RecorderOptions, RecorderSnapshot, CreateFlowInput } from './recorder';
 export { createSessionHistory, HISTORY_PREF_KEY, HISTORY_SESSION_KEY } from './history';
 export type { SessionHistory, SessionHistoryOptions, SessionHistorySnapshot } from './history';
 export { MASK_ATTR, ALLOWLIST_ATTR, SAFE_ATTR, SECRET_ATTR, SECRET_SCREENSHOT_SELECTOR, watchSecretFields, REDACTED, scrubText, isNhsNumber, isSensitiveName, isMaskedElement, redactEvent, redactHistoryEvent, redactInput, redactFlow } from './redact';
