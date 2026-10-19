@@ -43,6 +43,9 @@ export function expectedUrl(from: string, to: string): string {
 
 const b64 = (png: Buffer) => png.toString('base64');
 
+/** Quiet network time after which an action has settled, as in Playwright's `networkidle`. */
+const IDLE_MS = 500;
+
 /** True when scrubbing replaces part of the URL, so the recorded URL no longer opens the same page. */
 const isRedacted = (url: string) => scrubText(url).includes(REDACTED);
 
@@ -64,9 +67,23 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
   let activityAt = chainAt;
   const inflight = new Set<Request>();
   const isDocument = (request: Request) => request.isNavigationRequest() && request.frame() === page.mainFrame();
+  // Steps are handled one at a time, so the recorder can fall well behind the user. Navigations during handling go
+  // on a timeline, and stop() sorts them out by time: a navigation that started after the user's latest action had
+  // settled (settleMs passed, nothing in flight, IDLE_MS of quiet network) is the user's own, and becomes a step.
+  let lastActionAt: number | undefined;
+  const busyNavigations: Array<{ url: string; at: number; late: boolean }> = [];
+  /** When each action happened, for ordering. A merged typing step keeps its latest time. */
+  const actionTimes = new Map<ReplayStep, number>();
+  const settled = (now: number) => lastActionAt !== undefined && now - lastActionAt > settleMs && inflight.size === 0 && now - activityAt >= IDLE_MS;
+  /** The document request behind the next main-frame navigation: when it started and whether the user had settled. */
+  let documentRequest: { at: number; late: boolean } | undefined;
   const onRequest = (request: Request) => {
     // A new document drops the old one's requests, and those never report that they finished.
-    if (isDocument(request)) return inflight.clear();
+    if (isDocument(request)) {
+      const now = Date.now();
+      documentRequest = { at: now, late: settled(now) };
+      return inflight.clear();
+    }
     // A stream stays open, so it would hold every chain open until `redirectMs`.
     if (request.resourceType() !== 'eventsource') inflight.add(request);
   };
@@ -94,6 +111,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
     const same = prev && prev.type === step.type && (step.type === 'type' || step.type === 'select') && JSON.stringify(prev.selectors) === JSON.stringify(step.selectors);
     if (same) steps[steps.length - 1] = step;
     else steps.push(step);
+    if (at !== undefined && step.type !== 'navigate') actionTimes.set(step, at);
     startChain(step, at);
   };
 
@@ -117,14 +135,13 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
   async function handle(payload: PagePayload, at: number): Promise<void> {
     busy++;
     try {
-      const ts = Date.now() - startedAt;
+      const ts = at - startedAt;
       const screenshots = await shoot(payload);
       await page.waitForTimeout(settleMs / 2);
       await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => undefined);
       await page.waitForTimeout(settleMs / 2);
-      const after = page.url();
-      const moved = after !== lastUrl;
-      lastUrl = after;
+      // The outcome comes from the timeline in stop(): the page may have moved on because of a later action.
+      lastUrl = page.url();
       push({
         type: payload.type,
         ts,
@@ -138,7 +155,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
         name: payload.name,
         key: payload.key,
         scroll: payload.scroll,
-        expected: moved ? { kind: 'url', url: expectedUrl(payload.url, after) } : { kind: 'none' },
+        expected: { kind: 'none' },
         screenshots,
       }, at);
     } finally {
@@ -154,8 +171,14 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
       startChain(null);
       return;
     }
-    // Navigations during an action belong to that action's `expected`.
-    if (busy > 0 || url === lastUrl) return;
+    const now = Date.now();
+    const request = documentRequest;
+    documentRequest = undefined;
+    if (busy > 0) {
+      busyNavigations.push({ url, at: request?.at ?? now, late: request?.late ?? settled(now) });
+      return;
+    }
+    if (url === lastUrl) return;
     lastUrl = url;
     if (chainOpen()) {
       // A one-time link (a magic sign-in link, a ticket) cannot be replayed once its token is redacted.
@@ -172,6 +195,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
 
   await page.exposeBinding('__flowtapeEmit', (_source, payload: PagePayload) => {
     const at = Date.now();
+    lastActionAt = at;
     queue = queue.then(() => handle(payload, at)).catch(() => undefined);
   });
   const source = options.injectSource ?? loadInject();
@@ -182,6 +206,32 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
   page.on('requestfinished', onRequestDone);
   page.on('requestfailed', onRequestDone);
   page.on('framenavigated', onNavigate);
+
+  /**
+   * Turn the timeline into steps. An action's outcome is the last on-time navigation after it and before the next
+   * step, unless a redirect chain already set a later one. A late navigation becomes a navigate step at its time,
+   * ending at the last on-time navigation after it (a redirect chain collapses into it).
+   */
+  const placeBusyNavigations = () => {
+    const timeOf = (step: ReplayStep) => actionTimes.get(step) ?? startedAt + step.ts;
+    const lateSteps: ReplayStep[] = [];
+    busyNavigations.forEach((nav, i) => {
+      if (!nav.late) return;
+      const next = busyNavigations.slice(i + 1).find((n) => n.late);
+      const following = busyNavigations.slice(i + 1).filter((n) => !n.late && (!next || n.at < next.at));
+      const final = following.at(-1)?.url ?? nav.url;
+      lateSteps.push({ type: 'navigate', ts: nav.at - startedAt, url: scrubText(nav.url), selectors: [], expected: { kind: 'url', url: scrubText(final) } });
+    });
+    const all = [...steps, ...lateSteps].sort((a, b) => timeOf(a) - timeOf(b));
+    all.forEach((step, i) => {
+      if (step.type === 'navigate' || step.expected.kind !== 'none') return;
+      const start = timeOf(step);
+      const end = all[i + 1] ? timeOf(all[i + 1]) : Infinity;
+      const outcome = busyNavigations.filter((n) => !n.late && n.at > start && n.at < end).at(-1);
+      if (outcome && outcome.url !== step.url) step.expected = { kind: 'url', url: expectedUrl(step.url, outcome.url) };
+    });
+    steps.splice(0, steps.length, ...all);
+  };
 
   return {
     async stop() {
@@ -194,6 +244,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide'))).catch(() => undefined);
       await page.waitForTimeout(50).catch(() => undefined);
       await queue;
+      placeBusyNavigations();
       const warn = options.onWarning ?? ((message: string) => console.warn(message));
       if (isRedacted(startUrl)) warn(`flowtape: the start URL holds a redacted value, so replay cannot open it: ${scrubText(startUrl)}`);
       const replayable = steps.filter((step) => !(step.type === 'navigate' && isRedacted(step.url)));

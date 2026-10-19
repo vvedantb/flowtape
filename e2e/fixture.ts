@@ -59,6 +59,22 @@ export async function startFixture(): Promise<{ url: string; close: () => Promis
       res.end(`<!doctype html><title>Signing in</title><script>setTimeout(() => location.replace('/?from=magic'), 100);</script>`);
       return;
     }
+    // A click whose navigation takes 1.5 s to answer: it is still that click's outcome.
+    if (url.pathname === '/slow-page') {
+      setTimeout(() => {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end('<!doctype html><title>Slow</title><h1 data-testid="slow-heading">Slow page</h1>');
+      }, 1500);
+      return;
+    }
+    if (url.pathname === '/form') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.end(`<!doctype html><title>Form</title>
+<input data-testid="a" aria-label="A"><input data-testid="b" aria-label="B"><input data-testid="c" aria-label="C">
+<button data-testid="go-slow" type="button" onclick="location.href='/slow-page'">Go slow</button>
+<button data-testid="noop" type="button">Nothing</button>`);
+      return;
+    }
     if (url.pathname === '/callback') {
       res.writeHead(302, { Location: '/?from=login' });
       res.end();

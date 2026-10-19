@@ -181,6 +181,35 @@ test('a one-time link is replaced by the page it redirects to; a redacted URL wi
   expect(result.ok).toBe(true);
 });
 
+test('a slow navigation a click caused stays with the click', async ({ browser }) => {
+  const page = await newPage(browser);
+  const recording = await recordScript({ page, name: 'Slow click' });
+  await page.goto(`${fixture.url}form`);
+  await page.getByTestId('go-slow').click();
+  await page.waitForURL('**/slow-page', { timeout: 10_000 });
+  await page.waitForTimeout(800);
+  const script = await recording.stop();
+  await page.close();
+  expect(script.steps.map((s) => [s.type, s.expected])).toEqual([['click', { kind: 'url', url: '/slow-page' }]]);
+});
+
+test('a user navigation while earlier steps are still being handled becomes its own step', async ({ browser }) => {
+  const page = await newPage(browser);
+  const recording = await recordScript({ page, name: 'Backlog' });
+  await page.goto(`${fixture.url}form`);
+  // Three fields and a click in quick succession: the recorder handles them one by one, so it falls behind.
+  for (const id of ['a', 'b', 'c']) await page.getByTestId(id).fill(`value ${id}`);
+  await page.getByTestId('noop').click();
+  await page.waitForTimeout(900);
+  await page.goto(`${fixture.url}?variant=mutated`);
+  await page.waitForTimeout(1500);
+  const script = await recording.stop();
+  await page.close();
+  expect(script.steps.map((s) => s.type)).toEqual(['type', 'type', 'type', 'click', 'navigate']);
+  expect(script.steps[3].expected).toEqual({ kind: 'none' });
+  expect(script.steps[4]).toMatchObject({ url: `${fixture.url}?variant=mutated` });
+});
+
 test('real Jev finds the button on the refactored page', async ({ browser }) => {
   test.skip(!process.env.TYPESAFE_API_KEY, 'Set TYPESAFE_API_KEY to call the real Jev API.');
   const page = await newPage(browser);
