@@ -363,6 +363,34 @@ Redaction runs three times: in the browser as events are recorded, on the server
 
 The pattern scrub is a safety net, not a guarantee. Names, addresses, dates of birth typed into a free-text field and care notes have no reliable shape, so no pattern finds them. In an app that handles personal data, use allowlist mode, mask sensitive forms with `data-flowtape-mask`, and review a flow before you commit it. `test/prompt-secret-leak.test.ts` plants tokens in values, selectors, URLs and hrefs, then checks that none reach the prompt or the saved JSON.
 
+## Audit before you commit
+
+Redaction cannot recognise everything: a name, an address or a care note has no fixed shape. `flowtape audit` scans what flowtape saved (flows, prompts, e2e drafts, replay scripts and history) and reports what still looks sensitive:
+
+| Severity | Kind | Meaning |
+| --- | --- | --- |
+| error | `pattern` | Text that the current redaction rules would change: a secret, an NHS number, an email. This catches hand edits and files saved by older versions. |
+| warning | `name` | A title and surname ("Mrs Patel"), or a common given name and a capitalised word ("Margaret Thompson"), in a typed value or a check. |
+| warning | `address`, `date-of-birth` | A UK street address, or a date before 2016 in a value. |
+| warning | `unmasked-field` | A field labelled like personal data (name, address, phone, notes, diagnosis…) stored its value. |
+| warning | `screenshots` | A replay script holds screenshots. Text rules cannot read images. |
+
+```sh
+npx @vvedantb/flowtape audit             # the nearest .flowtape/
+npx @vvedantb/flowtape audit --staged    # only staged .flowtape files: for a pre-commit hook
+npx @vvedantb/flowtape audit --strict    # exit 1 on warnings too
+```
+
+It exits 1 on any error, or on any finding with `--strict`. Findings never print the suspect text in full: "Margaret Thompson" shows as `M******* T*******`, and digits are always hidden. To accept a false positive, add the exact text on its own line to `.flowtape/audit-allow.txt`.
+
+As a pre-commit hook, for example with Husky (`.husky/pre-commit`) or a plain `.git/hooks/pre-commit`:
+
+```sh
+npx @vvedantb/flowtape audit --staged --strict
+```
+
+The name and address checks are heuristics: they warn, and they miss things. In an app with personal data, they back up allowlist mode; they do not replace it. `auditFlowtape()` and `formatFindings()` from `@vvedantb/flowtape/node` do the same from code.
+
 ## Demo
 
 `examples/vite-demo` is a small app with synthetic data only. It has a fake sign-in form (email, password and a masked "Member ID"), a notes list and an add-note form.

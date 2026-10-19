@@ -40,6 +40,11 @@ export function isNhsNumber(digits: string): boolean {
   return (check === 11 ? 0 : check) === Number(digits[9]);
 }
 
+/** An address on a reserved example domain (RFC 2606, RFC 6761). No real person has one. */
+export function isExampleEmail(text: string): boolean {
+  return /^[^\s@]+@[^\s@]+$/.test(text) && RESERVED_EMAIL_DOMAIN.test(text);
+}
+
 const RESERVED_EMAIL_DOMAIN = /@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|net|org)|[A-Za-z0-9-]+\.(?:test|example|invalid|localhost)|test|example|invalid|localhost)$/i;
 
 /**
