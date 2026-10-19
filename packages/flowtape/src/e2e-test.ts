@@ -1,5 +1,5 @@
 import { REDACTED, checkableText, redactFlow } from './redact';
-import type { FlowDocument, FlowEvent, InputEvent } from './types';
+import type { FlowDocument, FlowEvent, InputEvent, Locator } from './types';
 
 export interface E2ETestOptions {
   /** A sign-in session from the runner config (`sessions` in e2e.config.ts), for example `testUser`. */
@@ -33,6 +33,36 @@ interface Target {
   /** Visible text, used to narrow a selector that matched several elements. */
   text?: string;
   nth?: number;
+  /** Strategies with their match counts on the page when recorded, most stable first. */
+  locators?: Locator[];
+}
+
+/** Runner code for a recorded strategy. */
+function code(l: Locator): string | undefined {
+  switch (l.strategy) {
+    case 'test-id':
+      return `screen.getByTestId(${str(l.value)})`;
+    case 'role':
+      return l.role && NAMED_ROLES.has(l.role) ? `screen.getByRole(${str(l.role)}, ${str(l.name ?? l.value)})` : undefined;
+    case 'label':
+      return `screen.getByLabel(${str(l.value)})`;
+    case 'placeholder':
+      return `screen.getByPlaceholder(${str(l.value)})`;
+    case 'text':
+      return `screen.getByText(${str(l.value)})`;
+    case 'css':
+      return `browser.locator(${str(l.value)})`;
+  }
+}
+
+/** The first recorded strategy that matched exactly one element. A redacted value cannot match the page, so it is skipped. */
+function uniqueLocator(locators: Locator[] | undefined): string | undefined {
+  for (const l of locators ?? []) {
+    if (l.matches !== 1 || l.value.includes(REDACTED) || l.name?.includes(REDACTED)) continue;
+    const found = code(l);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /**
@@ -43,6 +73,9 @@ interface Target {
  * and `hasText` never matches a field's value.
  */
 function locator(target: Target, kind: 'action' | 'field'): string {
+  // Checked on the live page when recorded: no guess about names or uniqueness.
+  const verified = uniqueLocator(target.locators);
+  if (verified) return verified;
   const narrow = (base: string) => {
     if (target.nth === undefined) return base;
     const check = checkableText(target.text);

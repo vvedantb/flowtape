@@ -31,7 +31,21 @@ describe('assert mode', () => {
     click('delete');
     expect(appClick).not.toHaveBeenCalled();
     expect(recorder.getSnapshot().events.filter((e) => e.type === 'click')).toHaveLength(0);
-    expect(asserts()).toEqual([{ type: 'assert', ts: expect.any(Number), selector: '#delete', role: 'button', name: 'Delete', text: 'Delete' }]);
+    expect(asserts()).toEqual([
+      {
+        type: 'assert',
+        ts: expect.any(Number),
+        selector: '#delete',
+        role: 'button',
+        name: 'Delete',
+        text: 'Delete',
+        locators: [
+          { strategy: 'role', role: 'button', name: 'Delete', value: 'Delete', matches: 1 },
+          { strategy: 'text', value: 'Delete', matches: 1 },
+          { strategy: 'css', value: '#delete', matches: 1 },
+        ],
+      },
+    ]);
     // One-shot: the next click is a normal click again.
     expect(recorder.getSnapshot().asserting).toBe(false);
     click('delete');

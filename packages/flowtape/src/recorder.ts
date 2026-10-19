@@ -144,22 +144,68 @@ export interface SelectorCandidate {
 
 const MAX_SELECTOR_TEXT = 50;
 
-/** Ordered selector strategies for replay, most stable first. Missing ones are skipped. Masked elements never offer their text. */
+/**
+ * Ordered selector strategies for replay, most stable first. Missing ones are skipped. Masked elements never offer
+ * their text or placeholder, and a masked non-field (a person's name on a link in allowlist mode) never offers its
+ * accessible name.
+ */
 export function selectorsFor(el: Element): SelectorCandidate[] {
   const out: SelectorCandidate[] = [];
+  const masked = isMaskedElement(el);
   const testId = el.getAttribute('data-testid');
   if (testId) out.push({ strategy: 'test-id', value: scrubText(testId) });
   const role = roleFor(el);
-  const name = nameFor(el);
+  const name = masked && !isField(el) ? undefined : nameFor(el);
   if (role && name) out.push({ strategy: 'role', role, name: scrubText(name), value: scrubText(name) });
   const label = isField(el) ? clean(el.labels?.[0]?.textContent) ?? clean(el.getAttribute('aria-label')) : undefined;
   if (label) out.push({ strategy: 'label', value: scrubText(label) });
-  const placeholder = clean(el.getAttribute('placeholder'));
+  // A masked field's placeholder can hold example data in the shape of the secret (123-45-6789), so it is not offered.
+  const placeholder = masked ? undefined : clean(el.getAttribute('placeholder'));
   if (placeholder) out.push({ strategy: 'placeholder', value: scrubText(placeholder) });
-  const text = isField(el) || isMaskedElement(el) ? undefined : clean(el.textContent);
+  const text = isField(el) || masked ? undefined : clean(el.textContent);
   if (text && text.length <= MAX_SELECTOR_TEXT) out.push({ strategy: 'text', value: scrubText(text) });
   out.push({ strategy: 'css', value: scrubText(selectorFor(el)) });
   return out;
+}
+
+/** A selector strategy with how many elements on the page it matched when recorded. */
+export type LocatorCandidate = SelectorCandidate & { matches: number };
+
+/** Visible, as the e2e runner's exactly-one rule counts. Without `checkVisibility` (test DOMs), everything counts. */
+function isVisible(el: Element): boolean {
+  return typeof el.checkVisibility === 'function' ? el.checkVisibility() : true;
+}
+
+/** How many visible elements in `doc` a candidate matches, with the same exact semantics the runner uses. */
+function countMatches(doc: Document, candidate: SelectorCandidate): number {
+  const all = (selector: string) => [...doc.querySelectorAll(selector)].filter(isVisible);
+  switch (candidate.strategy) {
+    case 'test-id':
+      return all('[data-testid]').filter((e) => e.getAttribute('data-testid') === candidate.value).length;
+    case 'role':
+      return all('*').filter((e) => roleFor(e) === candidate.role && nameFor(e) === candidate.name).length;
+    case 'label':
+      return all('input, textarea, select').filter((e) => isField(e) && (clean(e.labels?.[0]?.textContent) ?? clean(e.getAttribute('aria-label'))) === candidate.value).length;
+    case 'placeholder':
+      return all('[placeholder]').filter((e) => clean(e.getAttribute('placeholder')) === candidate.value).length;
+    case 'text':
+      // Innermost match only: a container whose whole text is the same string is not a second match.
+      return all('*').filter((e) => clean(e.textContent) === candidate.value && ![...e.children].some((child) => clean(child.textContent) === candidate.value)).length;
+    case 'css':
+      try {
+        return all(candidate.value).length;
+      } catch {
+        return 0;
+      }
+  }
+}
+
+/**
+ * Every selector strategy for `el` with its match count on the live page, so a test generator can use the first
+ * that is unique instead of guessing. Values are scrubbed, as in `selectorsFor`.
+ */
+export function locatorsFor(el: Element): LocatorCandidate[] {
+  return selectorsFor(el).map((candidate) => ({ ...candidate, matches: countMatches(el.ownerDocument, candidate) }));
 }
 
 function inputEvent(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, ts: number): InputEvent {
@@ -170,6 +216,7 @@ function inputEvent(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEleme
     type: 'input',
     ts,
     selector: selectorFor(el),
+    locators: locatorsFor(el),
     inputType,
     name: nameFor(el),
     redacted: masked,
@@ -204,6 +251,7 @@ function assertEvent(picked: Element, ts: number): AssertEvent {
     name: masked ? undefined : nameFor(el),
     text: text ? text.slice(0, MAX_ASSERT_TEXT) : undefined,
     nth: nthOf(el, selector),
+    locators: locatorsFor(el),
   };
 }
 
@@ -318,6 +366,7 @@ export function createCapture(options: CaptureOptions = {}): Capture {
       text: masked ? undefined : clean(el.textContent),
       href: el instanceof HTMLAnchorElement ? el.getAttribute('href') ?? undefined : undefined,
       nth: nthOf(el, selector),
+      locators: locatorsFor(el),
     });
   };
 

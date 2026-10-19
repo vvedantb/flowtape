@@ -10,6 +10,7 @@ import type {
   HistoryEventSchema,
   HistorySessionLineSchema,
   InputEventSchema,
+  LocatorSchema,
   NavigateEventSchema,
   PageErrorEventSchema,
   SavedFlowSchema,
@@ -21,6 +22,7 @@ export type ClickEvent = z.infer<typeof ClickEventSchema>;
 export type InputEvent = z.infer<typeof InputEventSchema>;
 export type SubmitEvent = z.infer<typeof SubmitEventSchema>;
 export type AssertEvent = z.infer<typeof AssertEventSchema>;
+export type Locator = z.infer<typeof LocatorSchema>;
 export type FlowEvent = z.infer<typeof FlowEventSchema>;
 export type FlowMeta = z.infer<typeof FlowMetaSchema>;
 export type FlowDocument = z.infer<typeof FlowDocumentSchema>;

@@ -1,5 +1,5 @@
 import { slugify } from './schemas';
-import type { FlowDocument, FlowEvent, HistoryEvent, InputEvent } from './types';
+import type { FlowDocument, FlowEvent, HistoryEvent, InputEvent, Locator } from './types';
 
 /** Put this on any element (or ancestor) whose value must never be stored. */
 export const MASK_ATTR = 'data-flowtape-mask';
@@ -161,9 +161,14 @@ function isSensitiveInput(event: InputEvent): boolean {
   return event.redacted || event.inputType === 'password' || isSensitiveName(event.selector) || isSensitiveName(event.name);
 }
 
+/** Locator values come from the page (names, labels, text), so they are scrubbed like any other text. */
+function scrubLocators(locators: Locator[] | undefined): Locator[] | undefined {
+  return locators?.map((l) => ({ ...l, value: scrubText(l.value), name: scrubOptional(l.name), role: scrubOptional(l.role) }));
+}
+
 /** Sensitive inputs lose their value entirely and keep only its length. Others get secrets scrubbed. */
 export function redactInput(event: InputEvent): InputEvent {
-  const base = { ...event, selector: scrubText(event.selector), name: scrubOptional(event.name) };
+  const base = { ...event, selector: scrubText(event.selector), name: scrubOptional(event.name), locators: scrubLocators(event.locators) };
   if (!isSensitiveInput(event)) return { ...base, value: event.value === null ? null : scrubText(event.value) };
   return { ...base, redacted: true, value: null, length: event.length ?? event.value?.length };
 }
@@ -181,13 +186,14 @@ export function redactEvent(event: FlowEvent): FlowEvent {
         role: scrubOptional(event.role),
         name: scrubOptional(event.name),
         href: scrubOptional(event.href),
+        locators: scrubLocators(event.locators),
       };
     case 'input':
       return redactInput(event);
     case 'submit':
       return { ...event, selector: scrubOptional(event.selector), action: scrubOptional(event.action), method: scrubOptional(event.method) };
     case 'assert':
-      return { ...event, selector: scrubText(event.selector), role: scrubOptional(event.role), name: scrubOptional(event.name), text: scrubOptional(event.text) };
+      return { ...event, selector: scrubText(event.selector), role: scrubOptional(event.role), name: scrubOptional(event.name), text: scrubOptional(event.text), locators: scrubLocators(event.locators) };
   }
 }
 
