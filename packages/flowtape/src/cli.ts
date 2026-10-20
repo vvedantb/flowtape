@@ -9,9 +9,12 @@ const USAGE = `Usage: flowtape history [path]
        flowtape record <url> [--out file] [--headed] [--name name]
        flowtape replay <file> [--jev | --no-jev] [--threshold <0-1>] [--headed]
        flowtape e2e <flow.json> [--out file] [--session name]
+       flowtape audit [paths...] [--staged] [--strict]
 
 record   Open <url> in Chromium and save a replay script (default .flowtape/scripts/<name>.json). Ctrl+C stops.
 replay   Replay a script with Playwright. Jev visual fallback runs when TYPESAFE_API_KEY is set, unless --no-jev.
+audit    Scan saved flows, prompts, e2e drafts, scripts and history for secrets and personal data. Exits 1 on an error,
+         or on any finding with --strict. --staged scans the staged .flowtape files (for a pre-commit hook).
 e2e      Write a test for the e2e runner from a saved flow (default .flowtape/e2e/<slug>.e2e.ts). --session names a sign-in session from e2e.config.ts.
 history  List recent session history files in the nearest .flowtape/history/ at or above [path] (default: cwd).`;
 
@@ -79,6 +82,15 @@ async function main(argv: string[]): Promise<number> {
     if (flag(args, 'jev') && flag(args, 'no-jev')) return fail('Use --jev or --no-jev, not both.');
     const { replayCommand } = await import('./script/replay');
     return replayCommand({ file, jev: flag(args, 'jev') ? true : flag(args, 'no-jev') ? false : undefined, threshold, headed: flag(args, 'headed') });
+  }
+  if (command === 'audit') {
+    const { auditFlowtape, formatFindings, stagedFlowtapeFiles } = await import('./audit');
+    const paths = positional(args, []);
+    const findings = auditFlowtape(flag(args, 'staged') ? { files: stagedFlowtapeFiles() } : { paths: paths.length ? paths : undefined });
+    const errors = findings.filter((f) => f.severity === 'error').length;
+    if (findings.length) console.log(formatFindings(findings));
+    console.log(`${findings.length ? '' : 'No findings. '}${errors} error(s), ${findings.length - errors} warning(s).${findings.length ? ' Accept a false positive by adding the exact text to .flowtape/audit-allow.txt.' : ''}`);
+    return errors || (flag(args, 'strict') && findings.length) ? 1 : 0;
   }
   if (command === 'e2e') {
     const [file] = positional(args, ['out', 'session']);
