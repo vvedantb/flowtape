@@ -29,7 +29,7 @@ export const REDACTED = '[REDACTED]';
 
 /** Field names, ids, labels and autocomplete hints that mean "secret" or "personal identifier". */
 const SENSITIVE_NAME =
-  /pass(word|wd|code|phrase)?|pwd|secret|token|api[-_]?key|private[-_]?key|credential|ssn|social[-_]?security|cvv|cvc|card[-_]?number|cc-(number|csc)|one-time-code|otp|(^|[^a-z])pin([^a-z]|$)|(^|[^a-z])dob([^a-z]|$)|date[-_\s]?of[-_\s]?birth|birth[-_\s]?(date|day)|bday|nhs[-_\s]?(number|no\b|num)|(verification|security|auth(entication)?|access|confirmation|backup|recovery)[-_\s]?codes?|2fa|mfa|two[-_\s]?(factor|step)|totp|one[-_\s]?time|national[-_\s]?insurance|(^|[^a-z])ni[-_\s]?(number|no\b)/i;
+  /pass(word|wd|code|phrase)?|pwd|secret|token|api[-_]?key|private[-_]?key|credential|ssn|social[-_]?security|cvv|cvc|card[-_]?number|cc-(number|csc)|one-time-code|otp|(^|[^a-z])pin([^a-z]|$)|(^|[^a-z])dob([^a-z]|$)|date[-_\s]?of[-_\s]?birth|birth[-_\s]?(date|day)|bday|nhs[-_\s]?(number|no\b|num)|(verification|security|auth(entication)?|access|confirmation|backup|recovery)[-_\s]?codes?|2fa|mfa|two[-_\s]?(factor|step)|totp|(^|[^a-z])one[-_\s]?time[-_\s]?(code|pass|pin)|national[-_\s]?insurance|(^|[^a-z])ni[-_\s]?(number|no\b)/i;
 
 /** NHS number check digit (modulus 11). A 10-digit run that fails it is not an NHS number. */
 export function isNhsNumber(digits: string): boolean {
@@ -54,7 +54,8 @@ const PERSONAL_PATTERNS: Array<[RegExp, (match: string) => string]> = [
   // UK postcode, for example `SW1A 1AA` or `m1 1ae`.
   [/\b(?:GIR ?0AA|[A-PR-UWYZ][A-HK-Y]?\d[A-Z\d]? ?\d[ABD-HJLNP-UW-Z]{2})\b/gi, () => REDACTED],
   // 2FA setup key (TOTP secret): base32, 16+ characters with at least one digit 2-7, often grouped in fours.
-  [/(?<![A-Za-z0-9])(?=(?:[A-Z2-7] ?){16})(?=[A-Z ]*[2-7])(?:[A-Z2-7]{4} ?){3,}[A-Z2-7]{4,}=*(?![A-Za-z0-9])/g, () => REDACTED],
+  // The digit must be inside the match, so upper-case words followed by a number elsewhere survive.
+  [/(?<![A-Za-z0-9])(?=(?:[A-Z2-7] ?){16})(?:[A-Z2-7]{4} ?){3,}[A-Z2-7]{4,}=*(?![A-Za-z0-9])/g, (match) => (/[2-7]/.test(match) ? REDACTED : match)],
   // UK mobile number.
   [/(?<![\d+])(?:\+44 ?7\d{3}|07\d{3}) ?\d{3} ?\d{3}(?!\d)/g, () => REDACTED],
 ];
@@ -128,6 +129,9 @@ function labelOf(el: Element): string | undefined {
   return [el.getAttribute('aria-label'), ...labels.map((label) => label.textContent)].filter(Boolean).join(' ') || undefined;
 }
 
+/** Codes that are not secrets, for example "Discount code" or "Post code". */
+const ORDINARY_CODE = /\b(discount|promo(tion(al)?)?|voucher|coupon|gift|referral|post(al)?|zip|sort|country|area|dialling)[-\s]?codes?\b/i;
+
 /**
  * A one-time code field that says nothing about itself in its name: a short numeric field whose label or
  * placeholder mentions a code, for example "Verification code" with `inputmode="numeric" maxlength="6"`.
@@ -137,7 +141,8 @@ function isCodeShaped(el: Element): boolean {
   const max = Number(el.getAttribute('maxlength'));
   const short = max >= 4 && max <= 8;
   const numeric = el.getAttribute('inputmode') === 'numeric' || /^\[0-9\]|\\d/.test(el.getAttribute('pattern') ?? '');
-  const mentionsCode = /\bcodes?\b|\bpin\b/i.test(`${labelOf(el) ?? ''} ${el.getAttribute('placeholder') ?? ''}`);
+  const text = `${labelOf(el) ?? ''} ${el.getAttribute('placeholder') ?? ''}`;
+  const mentionsCode = /\bcodes?\b|\bpin\b/i.test(text) && !ORDINARY_CODE.test(text);
   return mentionsCode && (short || numeric);
 }
 
@@ -215,6 +220,7 @@ export function redactFlow(doc: FlowDocument): FlowDocument {
 /**
  * Mark every password field now and whenever one appears, and keep the mark when a "show password" toggle
  * switches it to `type="text"`. Returns a function that stops watching. Browser only.
+ * Observes the document itself, so it works when started before `<html>` exists (an init script).
  */
 export function watchSecretFields(root: Document): () => void {
   const mark = (el: Element) => {
@@ -235,6 +241,6 @@ export function watchSecretFields(root: Document): () => void {
       });
     }
   });
-  observer.observe(root.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['type'], attributeOldValue: true });
+  observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['type'], attributeOldValue: true });
   return () => observer.disconnect();
 }

@@ -116,7 +116,7 @@ function install(host: Host) {
 const MASKED_ATTR = 'data-flowtape-shot-mask';
 (window as Host).__flowtapeIsMasked = isMaskedElement;
 // A password field stays masked after a "show password" toggle switches it to text.
-if (document.documentElement) watchSecretFields(document);
+watchSecretFields(document);
 (window as Host).__flowtapeMask = (on) => {
   for (const el of Array.from(document.querySelectorAll('input, textarea, select'))) {
     if (!on) el.removeAttribute(MASKED_ATTR);
