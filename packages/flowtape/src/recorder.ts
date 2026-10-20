@@ -111,8 +111,8 @@ export function roleFor(el: Element): string | undefined {
   return undefined;
 }
 
-/** Accessible name, roughly per the ARIA naming order. */
-export function nameFor(el: Element): string | undefined {
+/** The name from aria-label, aria-labelledby or a field's <label>: never from the element's own content or hints. */
+function labelNameFor(el: Element): string | undefined {
   const aria = clean(el.getAttribute('aria-label'));
   if (aria) return aria;
   const labelledBy = el.getAttribute('aria-labelledby');
@@ -123,13 +123,27 @@ export function nameFor(el: Element): string | undefined {
       .join(' ');
     if (clean(text)) return clean(text);
   }
+  return isField(el) ? clean(el.labels?.[0]?.textContent) : undefined;
+}
+
+/** Accessible name, roughly per the ARIA naming order. */
+export function nameFor(el: Element): string | undefined {
+  const label = labelNameFor(el);
+  if (label) return label;
   if (isField(el)) {
-    const label = clean(el.labels?.[0]?.textContent);
-    if (label) return label;
     if (el instanceof HTMLInputElement && ['submit', 'button', 'reset'].includes(fieldType(el))) return clean(el.value);
     return clean(el.getAttribute('placeholder')) ?? clean(el.getAttribute('title'));
   }
   return clean(el.getAttribute('title')) ?? clean(el.textContent);
+}
+
+/**
+ * The name to record. A masked field is named only by its label, as its placeholder, title or value can hold
+ * example data shaped like the secret (123-45-6789). A masked non-field (a person's name on a link) has no name.
+ */
+function recordedNameFor(el: Element): string | undefined {
+  if (!isMaskedElement(el)) return nameFor(el);
+  return isField(el) ? labelNameFor(el) : undefined;
 }
 
 export type SelectorStrategy = 'test-id' | 'role' | 'label' | 'placeholder' | 'text' | 'css';
@@ -146,8 +160,7 @@ const MAX_SELECTOR_TEXT = 50;
 
 /**
  * Ordered selector strategies for replay, most stable first. Missing ones are skipped. Masked elements never offer
- * their text or placeholder, and a masked non-field (a person's name on a link in allowlist mode) never offers its
- * accessible name.
+ * their text or placeholder, and are named only as `recordedNameFor` allows.
  */
 export function selectorsFor(el: Element): SelectorCandidate[] {
   const out: SelectorCandidate[] = [];
@@ -155,7 +168,7 @@ export function selectorsFor(el: Element): SelectorCandidate[] {
   const testId = el.getAttribute('data-testid');
   if (testId) out.push({ strategy: 'test-id', value: scrubText(testId) });
   const role = roleFor(el);
-  const name = masked && !isField(el) ? undefined : nameFor(el);
+  const name = recordedNameFor(el);
   if (role && name) out.push({ strategy: 'role', role, name: scrubText(name), value: scrubText(name) });
   const label = isField(el) ? clean(el.labels?.[0]?.textContent) ?? clean(el.getAttribute('aria-label')) : undefined;
   if (label) out.push({ strategy: 'label', value: scrubText(label) });
@@ -218,7 +231,7 @@ function inputEvent(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEleme
     selector: selectorFor(el),
     locators: locatorsFor(el),
     inputType,
-    name: nameFor(el),
+    name: recordedNameFor(el),
     redacted: masked,
     value: masked ? null : raw,
     length: masked ? raw.length : undefined,
@@ -248,7 +261,7 @@ function assertEvent(picked: Element, ts: number): AssertEvent {
     ts,
     selector,
     role: roleFor(el),
-    name: masked ? undefined : nameFor(el),
+    name: recordedNameFor(el),
     text: text ? text.slice(0, MAX_ASSERT_TEXT) : undefined,
     nth: nthOf(el, selector),
     locators: locatorsFor(el),
@@ -362,7 +375,7 @@ export function createCapture(options: CaptureOptions = {}): Capture {
       ts: now(),
       selector,
       role: roleFor(el),
-      name: masked ? undefined : nameFor(el),
+      name: recordedNameFor(el),
       text: masked ? undefined : clean(el.textContent),
       href: el instanceof HTMLAnchorElement ? el.getAttribute('href') ?? undefined : undefined,
       nth: nthOf(el, selector),
