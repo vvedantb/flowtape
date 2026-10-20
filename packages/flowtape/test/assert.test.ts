@@ -241,4 +241,25 @@ describe('count and gone on rows without unique selectors', () => {
     expect(types.slice(-2)).toEqual(['input', 'assert:gone']);
     expect(exported()).toContain('await expect(screen.getByText("Pay rent")).toBeHidden();');
   });
+
+  it('a test id on the list around the rows is not used: it would count the list, and still be there after a Gone', async () => {
+    document.getElementById('notes')?.setAttribute('data-testid', 'notes-list');
+    recorder.assertNext('count');
+    element('li.note', 1).click();
+    recorder.assertNext('gone');
+    element('button.del', 0).click();
+    element('button.del', 0).click();
+    await flush();
+    const out = exported();
+    expect(out).toContain('await expect(browser.locator("[data-testid=\\"notes-list\\"] > li")).toHaveCount(4);');
+    expect(out).toContain('await expect(browser.locator("button.del")).toHaveCount(3);');
+    expect(out).not.toContain('getByTestId("notes-list")');
+  });
+
+  it('Count on rows with their own ids counts every row', () => {
+    document.querySelectorAll('li.note').forEach((li, i) => (li.id = `note-${i}`));
+    recorder.assertNext('count');
+    element('li.note', 1).click();
+    expect(exported()).toContain('await expect(browser.locator("#notes > li")).toHaveCount(4);');
+  });
 });

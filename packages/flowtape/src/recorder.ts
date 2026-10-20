@@ -243,14 +243,24 @@ function nthOf(el: Element, selector: string): number | undefined {
 const MAX_ASSERT_TEXT = 200;
 
 /**
- * A selector for elements like `el`, with no position in it, so it matches the other rows of a list too: the nearest
- * test id on `el` or an ancestor (the row a child sits in), else its CSS path without its own `:nth-of-type`, else
- * tag and classes. Undefined when only a positional selector would do.
+ * A selector for elements like `el`, with no position in it, so it matches the other rows of a list too: its test id,
+ * else the nearest ancestor test id that other rows share (the row a child sits in, not the list around it), else its
+ * own id, name or label when other elements share it, else its parent's CSS path and its tag, else tag and classes.
+ * Undefined when only a positional selector would do.
  */
 function sharedSelectorFor(el: Element): string | undefined {
-  const testId = el.closest('[data-testid]')?.getAttribute('data-testid');
-  if (testId) return `[data-testid=${quote(testId)}]`;
-  const path = selectorFor(el).replace(/:nth-of-type\(\d+\)$/, '');
+  const doc = el.ownerDocument;
+  const testIdOf = (node: Element) => `[data-testid=${quote(node.getAttribute('data-testid') ?? '')}]`;
+  if (el.hasAttribute('data-testid')) return testIdOf(el);
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    if (node.hasAttribute('data-testid') && doc.querySelectorAll(testIdOf(node)).length > 1) return testIdOf(node);
+  }
+  // An id or a per-row label names only this element, so it counts 1 however many rows there are.
+  const own = stableSelector(el);
+  if (own && doc.querySelectorAll(own).length > 1) return own;
+  const tag = el.tagName.toLowerCase();
+  const parent = el.parentElement;
+  const path = parent && parent.tagName !== 'HTML' ? `${selectorFor(parent)} > ${tag}` : tag;
   if (!path.includes(':nth-of-type(')) return path;
   const classes = [...el.classList].filter((c) => /^[A-Za-z_][\w-]*$/.test(c));
   return classes.length ? `${el.tagName.toLowerCase()}.${classes.join('.')}` : undefined;
