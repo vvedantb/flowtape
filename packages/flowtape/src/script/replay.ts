@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { envVarFor } from '../prompt';
+import { ALLOWLIST_ATTR, SECRET_ATTR, SECRET_SCREENSHOT_SELECTOR } from '../redact';
 import { fitImage, type FittedImage } from './image';
 import { createJevClient, type JevClient, type JevQuestion } from './jev';
 import { ReplayScriptSchema, type ReplayScript, type ReplaySelector, type ReplayStep } from './schema';
@@ -29,7 +30,7 @@ export interface ReplayPage {
   getByText(text: string, options: { exact: boolean }): ReplayLocator;
   mouse: { click(x: number, y: number): Promise<void> };
   keyboard: { press(key: string): Promise<void>; insertText(text: string): Promise<void> };
-  screenshot(options?: { type: 'png'; scale: 'css' }): Promise<Buffer>;
+  screenshot(options?: { type: 'png'; scale: 'css'; style?: string }): Promise<Buffer>;
   viewportSize(): { width: number; height: number } | null;
   setViewportSize(size: { width: number; height: number }): Promise<void>;
 }
@@ -165,9 +166,19 @@ interface VisualHit {
   confidence: number;
 }
 
+/** Takes a masked screenshot, or none when no screenshot may leave the page. */
+type Shoot = () => Promise<Buffer | undefined>;
+
+/** Applied only while a replay screenshot is taken: secret fields and areas become solid blocks, as Playwright's `mask` draws them. */
+const SECRET_SCREENSHOT_STYLE = `:is(${SECRET_SCREENSHOT_SELECTOR}) { color: transparent !important; -webkit-text-fill-color: transparent !important; background: #ff00ff !important; text-shadow: none !important; } :is(${SECRET_SCREENSHOT_SELECTOR}) img, :is(${SECRET_SCREENSHOT_SELECTOR}) svg { opacity: 0 !important; }`;
+
+const NO_JEV = 'Jev is off on this page: it is in allowlist mode, so no screenshot may leave it';
+
 /** Jev: is the target on screen (noul), and where (box)? Returns the centre in page CSS pixels. */
-async function jevLocate(jev: JevClient, page: ReplayPage, step: ReplayStep, threshold: number): Promise<VisualHit> {
-  const shot = fitImage(await page.screenshot({ type: 'png', scale: 'css' }));
+async function jevLocate(jev: JevClient, shoot: Shoot, step: ReplayStep, threshold: number): Promise<VisualHit> {
+  const png = await shoot();
+  if (!png) throw new StepFailure(NO_JEV);
+  const shot = fitImage(png);
   const assets: Record<string, { type: 'image'; format: 'png'; data_base64: string }> = { ft_page: { type: 'image', format: 'png', data_base64: shot.png.toString('base64') } };
   let target = describeTarget(step);
   if (step.screenshots?.target) {
@@ -258,7 +269,7 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
   let tried: TriedSelector[] = [];
   for (const [index, step] of script.steps.entries()) {
     tried = [];
-    const before = await page.screenshot({ type: 'png', scale: 'css' }).catch(() => undefined);
+    const before = await shoot();
     try {
       results.push(await runStep(step, index));
     } catch (error) {
@@ -266,6 +277,20 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
     }
   }
   return { ok: true, steps: results };
+
+  /**
+   * Every screenshot replay takes, for failure reports and for Jev, comes from here. Known secret fields and
+   * every field replay filled from a secret are masked. A page in allowlist mode holds personal data, so none is taken.
+   */
+  async function shoot(): Promise<Buffer | undefined> {
+    if ((await page.locator(`[${ALLOWLIST_ATTR}]`).count().catch(() => 1)) > 0) return undefined;
+    return page.screenshot({ type: 'png', scale: 'css', style: SECRET_SCREENSHOT_STYLE }).catch(() => undefined);
+  }
+
+  /** The focused field just received a secret: keep it masked, also after a "show password" toggle. */
+  async function markSecret(): Promise<void> {
+    await page.evaluate((attr: string) => document.activeElement?.setAttribute(attr, ''), SECRET_ATTR).catch(() => undefined);
+  }
 
   async function runStep(step: ReplayStep, index: number): Promise<StepResult> {
     const result: StepResult = { index, type: step.type, via: 'none', tried: [], confidence: 1 };
@@ -283,7 +308,7 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
         result.via = found.via;
         await act(step, found.locator, result);
       } else if (jev) {
-        const hit = await jevLocate(jev, page, step, threshold);
+        const hit = await jevLocate(jev, shoot, step, threshold);
         result.via = 'jev';
         result.confidence = hit.confidence;
         await actAt(step, hit, result);
@@ -294,7 +319,9 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
     await settle(page, stableMs);
     if (!(await expectationMet(page, step, options.expectTimeoutMs ?? 5000))) {
       if (!jev) throw new StepFailure(`Expected outcome not reached: ${describeExpected(step)}`);
-      const after = fitImage(await page.screenshot({ type: 'png', scale: 'css' }));
+      const png = await shoot();
+      if (!png) throw new StepFailure(`Expected outcome not reached: ${describeExpected(step)}. ${NO_JEV}`);
+      const after = fitImage(png);
       const { answers } = await jev.ask({
         state: { after: 'ft_after' },
         questions: { outcome: { type: 'noul', instructions: `Does \`after\` show this outcome: ${describeExpected(step)}?`, criteria: { true: 'The outcome is visible', false: 'The outcome is not visible' } } },
@@ -316,7 +343,10 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
     else if (step.type === 'type') {
       const value = step.redacted ? secretFor(step, env) : step.value ?? '';
       if (value === undefined) result.note = `Skipped: ${envVarFor({ type: 'input', ts: 0, selector: '', value: null, redacted: true, name: step.name, inputType: step.inputType })} is not set`;
-      else await locator.fill(value, timeout);
+      else {
+        await locator.fill(value, timeout);
+        if (step.redacted) await markSecret();
+      }
     }
   }
 
@@ -330,6 +360,7 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
       else {
         await page.keyboard.press('ControlOrMeta+a');
         await page.keyboard.insertText(value);
+        if (step.redacted) await markSecret();
       }
     }
   }
@@ -338,7 +369,8 @@ export async function replayScript(input: ReplayScript, options: ReplayOptions):
     const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
     const failure: ReplayFailure = { index, type: step.type, tried, reason };
     try {
-      const after = await page.screenshot({ type: 'png', scale: 'css' }).catch(() => undefined);
+      const after = await shoot();
+      if (!before && !after) failure.reason += ' (no screenshots: the page is in allowlist mode)';
       fs.mkdirSync(runDir, { recursive: true });
       if (before) fs.writeFileSync((failure.before = path.join(runDir, `step-${index + 1}-before.png`)), before);
       if (after) fs.writeFileSync((failure.after = path.join(runDir, `step-${index + 1}-after.png`)), after);

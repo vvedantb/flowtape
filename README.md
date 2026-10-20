@@ -306,11 +306,18 @@ A failed replay exits with code 1. It prints the step, the selectors tried, the 
 
 Replay scripts use the same redaction as the overlay. Password fields, `data-flowtape-mask` areas and secret-looking field names record `redacted: true`, `value: null` and the value's length. Redacted steps carry no screenshots, and masked fields are blanked in all other screenshots.
 
+Screenshots follow the same rules as the text:
+
+- **Every screenshot is masked**: recorded page shots, target crops, replay failure shots and anything sent to Jev. Masked fields become solid magenta blocks.
+- **A revealed password stays masked.** A field that was ever `type="password"` keeps `data-flowtape-secret`, so a "Show password" toggle that switches it to text cannot unmask it, in data or in pixels. Replay also marks every field it fills from a `FLOWTAPE_*` value.
+- **Target crops** are taken of each step's own element. A masked element gets no crop.
+- **Allowlist mode takes no screenshots**, in recording and in replay, and replay never calls Jev on such a page. Failure reports say why they have no images.
+
 On replay, a redacted field is filled from an environment variable named after the field, for example `FLOWTAPE_PASSWORD`. If the variable is not set, replay leaves the field empty and notes this in the step output. It never invents a secret.
 
 ### Jev (optional)
 
-Jev is the TypeSafe System One visual model (`jev-1.14.0`, `https://api.typesafe.ai/v1/systemone`). Set `TYPESAFE_API_KEY` to turn it on. Without a key, replay is selector-only and makes no network calls. With Jev on, page and target screenshots leave your machine, so check that they are safe to share. Image input is experimental.
+Jev is the TypeSafe System One visual model (`jev-1.14.0`, `https://api.typesafe.ai/v1/systemone`). Set `TYPESAFE_API_KEY` to turn it on. Without a key, replay is selector-only and makes no network calls. With Jev on, page and target screenshots leave your machine. They are masked as above, but text on the page that no rule masks (a name, an address) is still visible, so check that they are safe to share, and use allowlist mode for pages with personal data. Image input is experimental.
 
 ## Redaction
 
@@ -322,7 +329,9 @@ Redaction runs three times: in the browser as events are recorded, on the server
   ```html
   <form data-flowtape-mask>…every field in here is recorded type-only…</form>
   ```
-- **Secret-looking and personal field names**: fields whose `name`, `id`, `autocomplete` or label suggests a secret (password, token, API key, OTP, card number, CVC and so on) or a personal identifier (date of birth, NHS number, National Insurance number) are treated as masked. This covers "show password" toggles that switch the field to `type="text"`, and a field labelled "Date of birth" with no telling `name`.
+- **Secret-looking and personal field names**: fields whose `name`, `id`, `autocomplete` or label suggests a secret (password, token, API key, OTP, verification or security code, 2FA, MFA, card number, CVC and so on) or a personal identifier (date of birth, NHS number, National Insurance number) are treated as masked. This covers a field labelled "Date of birth" or "Verification code" with no telling `name`.
+- **Revealed passwords**: a field that was ever `type="password"` stays masked after a "show password" toggle switches it to `type="text"`, even with no telling name or label.
+- **One-time code fields by shape**: a short field (`maxlength` 4 to 8) or a numeric one (`inputmode="numeric"`) whose label or placeholder mentions a code or PIN is masked.
 - **Allowlist mode** (`data-flowtape-allowlist`): for apps that handle personal data. Put it on `<body>` or any container. Inside it, every field is recorded type-only, and links, rows and other non-control elements lose their text, unless the element or an ancestor has `data-flowtape-safe`. Names of buttons, tabs, checkboxes and similar controls are kept, because replay needs them and they are interface labels. Mark the fields that are safe to store:
 
   ```html
@@ -342,6 +351,7 @@ Redaction runs three times: in the browser as events are recorded, on the server
   - NHS numbers (10 digits, grouped or not, that pass the modulus 11 check digit, so other 10-digit ids survive)
   - email addresses, except reserved example domains (`example.com`, `*.test`, `*.example`, `*.invalid`, `*.localhost`) that test accounts and placeholders use
   - UK postcodes and UK mobile numbers
+  - 2FA setup keys: base32 runs of 16 or more characters with a digit from 2 to 7, grouped in fours or not (`JBSW Y3DP EHPK 3PXP`)
 
 The pattern scrub is a safety net, not a guarantee. Names, addresses, dates of birth typed into a free-text field and care notes have no reliable shape, so no pattern finds them. In an app that handles personal data, use allowlist mode, mask sensitive forms with `data-flowtape-mask`, and review a flow before you commit it. `test/prompt-secret-leak.test.ts` plants tokens in values, selectors, URLs and hrefs, then checks that none reach the prompt or the saved JSON.
 
