@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { flowToE2ETest } from './e2e-test';
@@ -85,10 +84,9 @@ async function main(argv: string[]): Promise<number> {
     return replayCommand({ file, jev: flag(args, 'jev') ? true : flag(args, 'no-jev') ? false : undefined, threshold, headed: flag(args, 'headed') });
   }
   if (command === 'audit') {
-    const { auditFlowtape, formatFindings } = await import('./audit');
-    const staged = flag(args, 'staged');
-    const paths = staged ? stagedFlowtapeFiles() : positional(args, []);
-    const findings = auditFlowtape({ paths: staged || paths.length ? paths : undefined });
+    const { auditFlowtape, formatFindings, stagedFlowtapeFiles } = await import('./audit');
+    const paths = positional(args, []);
+    const findings = auditFlowtape(flag(args, 'staged') ? { files: stagedFlowtapeFiles() } : { paths: paths.length ? paths : undefined });
     const errors = findings.filter((f) => f.severity === 'error').length;
     if (findings.length) console.log(formatFindings(findings));
     console.log(`${findings.length ? '' : 'No findings. '}${errors} error(s), ${findings.length - errors} warning(s).${findings.length ? ' Accept a false positive by adding the exact text to .flowtape/audit-allow.txt.' : ''}`);
@@ -106,12 +104,6 @@ async function main(argv: string[]): Promise<number> {
   }
   console.log(USAGE);
   return command === undefined || command === '--help' || command === '-h' ? 0 : 1;
-}
-
-/** Staged files under a .flowtape/ folder, added, copied or modified. */
-function stagedFlowtapeFiles(): string[] {
-  const out = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACM'], { encoding: 'utf8' });
-  return out.split('\n').filter((file) => file.split('/').includes('.flowtape'));
 }
 
 function fail(message: string): number {

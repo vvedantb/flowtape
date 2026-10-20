@@ -2,6 +2,7 @@
  * Node only. Scans saved flowtape files for personal data and secrets that redaction left behind, so a commit
  * hook can stop them. Findings never print the suspect text in full.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { REDACTED, isExampleEmail, scrubText } from './redact';
@@ -10,7 +11,7 @@ export type AuditSeverity = 'error' | 'warning';
 
 export interface AuditFinding {
   severity: AuditSeverity;
-  /** `pattern`, `name`, `date-of-birth`, `address`, `unmasked-field` or `screenshots`. */
+  /** `pattern`, `invalid-json`, `name`, `date-of-birth`, `address`, `unmasked-field` or `screenshots`. */
   kind: string;
   file: string;
   /** A JSON path (`events[3].value`) for JSON files, a line number for text files. */
@@ -22,8 +23,19 @@ export interface AuditOptions {
   /** Files or folders to scan. Default: the nearest `.flowtape/` at or above `cwd`. */
   paths?: string[];
   cwd?: string;
-  /** Exact strings to ignore. Default: lines of `.flowtape/audit-allow.txt`, when it exists. */
+  /** Files already read, such as staged content. Replaces `paths`. */
+  files?: AuditSource[];
+  /**
+   * Exact strings to ignore. Default: lines of `.flowtape/audit-allow.txt`, when it exists. A script's path, relative to
+   * `.flowtape/` or to the folder that holds it, accepts that script's screenshots.
+   */
   allow?: string[];
+}
+
+export interface AuditSource {
+  /** Absolute path. */
+  file: string;
+  text: string;
 }
 
 const SCANNED = /\.(json|jsonl|md|ts)$/;
@@ -106,25 +118,31 @@ function heuristicFindings(file: string, where: string, text: string, allow: Set
   return out;
 }
 
-/** Fields whose value is what people type: inputs and checks, not the interface's own labels. */
-function isValue(at: string): boolean {
-  return /\.(value|text)$/.test(at) || /^name$/.test(at);
+/** Steps and events that store what was typed or chosen: flow and history inputs, script `type` and `select` steps. */
+const VALUE_TYPES = new Set(['input', 'type', 'select']);
+
+/**
+ * Fields whose value is what people type: inputs and checks, not the interface's own labels. A top-level `name` is
+ * the title of a flow or script; on a flat history event (it has a `type`) it is a field label.
+ */
+function isValue(at: string, parent: Record<string, unknown> | undefined): boolean {
+  return /(?:^|\.)(?:value|text)$/.test(at) || (at === 'name' && parent?.type === undefined);
 }
 
-function auditJson(file: string, doc: unknown, allow: Set<string>): AuditFinding[] {
+function auditJson(file: string, doc: unknown, allow: Set<string>, shotsAllowed = false): AuditFinding[] {
   const out: AuditFinding[] = [];
   for (const { at, text, parent } of strings(doc)) {
     if (allow.has(text) || at.endsWith('.screenshots.page') || at.endsWith('.screenshots.target')) continue;
     const pattern = patternFinding(file, at, text);
     if (pattern) out.push(pattern);
-    else if (isValue(at)) out.push(...heuristicFindings(file, at, text, allow));
+    else if (isValue(at, parent)) out.push(...heuristicFindings(file, at, text, allow));
     // A stored value under a personal-sounding label.
-    if (at.endsWith('.value') && text && parent?.type === 'input' && parent.redacted !== true && typeof parent.name === 'string' && PERSONAL_FIELD.test(parent.name) && !text.includes(REDACTED) && !isExampleEmail(text)) {
+    if ((at === 'value' || at.endsWith('.value')) && text && typeof parent?.type === 'string' && VALUE_TYPES.has(parent.type) && parent.redacted !== true && typeof parent.name === 'string' && PERSONAL_FIELD.test(parent.name) && !text.includes(REDACTED) && !isExampleEmail(text)) {
       out.push({ severity: 'warning', kind: 'unmasked-field', file, where: at, message: `"${parent.name}" stored its value. Mask the field (data-flowtape-mask) or use allowlist mode.` });
     }
   }
   const shots = strings(doc).filter(({ at }) => at.endsWith('.screenshots.page') || at.endsWith('.screenshots.target')).length;
-  if (shots) out.push({ severity: 'warning', kind: 'screenshots', file, where: 'steps', message: `${shots} screenshot(s). Text rules cannot read images: look at them, or record in allowlist mode.` });
+  if (shots && !shotsAllowed) out.push({ severity: 'warning', kind: 'screenshots', file, where: 'steps', message: `${shots} screenshot(s). Text rules cannot read images: look at them, or record in allowlist mode.` });
   return out;
 }
 
@@ -146,19 +164,58 @@ export function auditFlowtape(options: AuditOptions = {}): AuditFinding[] {
   const allow = new Set(options.allow ?? (allowFile && fs.existsSync(allowFile) ? fs.readFileSync(allowFile, 'utf8').split('\n').map((line) => line.trim()).filter(Boolean) : []));
   // An explicit empty list (nothing staged) scans nothing; no list scans the nearest .flowtape/.
   const targets = options.paths ? options.paths.map((p) => path.resolve(cwd, p)) : base ? [base] : [];
-  return targets.flatMap(filesUnder).flatMap((file) => {
+  const sources = options.files ?? targets.flatMap(filesUnder).map((file) => ({ file, text: fs.readFileSync(file, 'utf8') }));
+  return sources.flatMap(({ file, text: raw }) => {
     const shown = path.relative(cwd, file) || file;
-    const raw = fs.readFileSync(file, 'utf8');
     if (file.endsWith('.json')) {
+      let doc: unknown;
       try {
-        return auditJson(shown, JSON.parse(raw), allow);
+        doc = JSON.parse(raw);
       } catch {
         return auditText(shown, raw, allow);
       }
+      return auditJson(shown, doc, allow, allowedPaths(file, shown).some((p) => allow.has(p)));
     }
-    if (file.endsWith('.jsonl')) return raw.split('\n').filter(Boolean).flatMap((line, i) => auditJson(`${shown}:${i + 1}`, JSON.parse(line), allow));
+    if (file.endsWith('.jsonl')) {
+      return raw.split('\n').flatMap((line, i) => {
+        if (!line.trim()) return [];
+        try {
+          return auditJson(`${shown}:${i + 1}`, JSON.parse(line), allow);
+        } catch {
+          const invalid: AuditFinding = { severity: 'error', kind: 'invalid-json', file: shown, where: `line ${i + 1}`, message: 'is not valid JSON, so it was not scanned.' };
+          return [invalid];
+        }
+      });
+    }
     return auditText(shown, raw, allow);
   });
+}
+
+/** Ways to name a file in audit-allow.txt: relative to `.flowtape/`, to the folder that holds `.flowtape/`, or to cwd. */
+function allowedPaths(file: string, shown: string): string[] {
+  const parts = file.split(path.sep);
+  const at = parts.lastIndexOf('.flowtape');
+  const named = at < 0 ? [shown] : [parts.slice(at + 1).join('/'), parts.slice(at).join('/'), shown];
+  return named.map((p) => p.split(path.sep).join('/'));
+}
+
+/**
+ * Staged files under a `.flowtape/` folder (added, copied, modified or renamed), read from the index rather than the
+ * working tree, so a cleaned-up working copy cannot hide a staged secret. Throws when a staged file cannot be read.
+ */
+export function stagedFlowtapeFiles(cwd = process.cwd()): AuditSource[] {
+  const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim();
+  const listed = execFileSync('git', ['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR'], { cwd: top, encoding: 'utf8' });
+  return listed
+    .split('\0')
+    .filter((rel) => rel.split('/').includes('.flowtape') && SCANNED.test(rel) && !rel.split('/').includes('replay-failures'))
+    .map((rel) => {
+      try {
+        return { file: path.join(top, rel), text: execFileSync('git', ['show', `:${rel}`], { cwd: top, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }) };
+      } catch (error) {
+        throw new Error(`Cannot read staged file ${rel}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
 }
 
 export function formatFindings(findings: AuditFinding[]): string {

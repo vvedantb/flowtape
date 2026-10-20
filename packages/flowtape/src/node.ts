@@ -7,5 +7,5 @@ export { createJevClient, JevError, JEV_MODEL, JEV_URL } from './script/jev';
 export type { JevClient, JevClientOptions, JevQuestion, JevAnswer, JevRequest, JevResult, JevAsset, JevBox } from './script/jev';
 export { fitImage, MIN_SIDE, MAX_SIDE } from './script/image';
 export type { FittedImage } from './script/image';
-export { auditFlowtape, formatFindings } from './audit';
-export type { AuditFinding, AuditOptions, AuditSeverity } from './audit';
+export { auditFlowtape, formatFindings, stagedFlowtapeFiles } from './audit';
+export type { AuditFinding, AuditOptions, AuditSeverity, AuditSource } from './audit';

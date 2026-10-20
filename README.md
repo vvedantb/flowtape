@@ -373,15 +373,16 @@ Redaction cannot recognise everything: a name, an address or a care note has no 
 | warning | `name` | A title and surname ("Mrs Patel"), or a common given name and a capitalised word ("Margaret Thompson"), in a typed value or a check. |
 | warning | `address`, `date-of-birth` | A UK street address, or a date before 2016 in a value. |
 | warning | `unmasked-field` | A field labelled like personal data (name, address, phone, notes, diagnosis…) stored its value. |
+| error | `invalid-json` | A history line is not valid JSON, so it could not be scanned. |
 | warning | `screenshots` | A replay script holds screenshots. Text rules cannot read images. |
 
 ```sh
 npx @vvedantb/flowtape audit             # the nearest .flowtape/
-npx @vvedantb/flowtape audit --staged    # only staged .flowtape files: for a pre-commit hook
+npx @vvedantb/flowtape audit --staged    # the staged content of .flowtape files: for a pre-commit hook
 npx @vvedantb/flowtape audit --strict    # exit 1 on warnings too
 ```
 
-It exits 1 on any error, or on any finding with `--strict`. Findings never print the suspect text in full: "Margaret Thompson" shows as `M******* T*******`, and digits are always hidden. To accept a false positive, add the exact text on its own line to `.flowtape/audit-allow.txt`.
+It exits 1 on any error, or on any finding with `--strict`. Findings never print the suspect text in full: "Margaret Thompson" shows as `M******* T*******`, and digits are always hidden. To accept a false positive, add the exact text on its own line to `.flowtape/audit-allow.txt`. Once you have looked at a script's screenshots, accept them by adding the script's path, relative to `.flowtape/` (`scripts/sign-in.json`) or to the folder that holds `.flowtape/` (`.flowtape/scripts/sign-in.json`), on its own line. Without that, `--strict` fails on every script with screenshots.
 
 As a pre-commit hook, for example with Husky (`.husky/pre-commit`) or a plain `.git/hooks/pre-commit`:
 
