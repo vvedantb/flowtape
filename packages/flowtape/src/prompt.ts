@@ -83,6 +83,9 @@ function describe(event: FlowEvent, index: number, events: FlowEvent[], pathOf: 
       return `Type ${value} into the field ${field}.${breaks}${scrubbed}`;
     }
     case 'assert': {
+      const what = `the ${event.role ?? 'element'} ${target(event.name, event.selector)}`;
+      if (event.check === 'count') return `**Check:** there are exactly ${event.count ?? 'the recorded number of'} elements like ${what}. This is an assertion, not an action.`;
+      if (event.check === 'gone') return `**Check:** ${what} is no longer on the page after the previous step. This is an assertion, not an action.`;
       const check = checkableText(event.text);
       const quoted = check && code(truncate(check.text).replace(/\r\n?|\n/g, ' '));
       const shows = !event.text

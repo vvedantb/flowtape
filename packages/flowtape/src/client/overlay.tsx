@@ -2,7 +2,7 @@ import { useState, useSyncExternalStore, type CSSProperties, type FormEvent } fr
 import { createPortal } from 'react-dom';
 import { z } from 'zod';
 import { createSessionHistory, type SessionHistory, type SessionHistorySnapshot } from '../history';
-import { createCapture, createFlowDocument, createRecorder, type Capture, type Recorder } from '../recorder';
+import { createCapture, createFlowDocument, createRecorder, type AssertCheck, type Capture, type Recorder } from '../recorder';
 import { SavedFlowSchema } from '../schemas';
 import type { FlowEvent, SavedFlow } from '../types';
 
@@ -82,10 +82,20 @@ function summarise(event: FlowEvent): string {
       return `input ${event.name ?? event.selector} ${event.redacted ? '(redacted)' : `= "${event.value ?? ''}"`}`;
     case 'submit':
       return `submit ${event.selector ?? 'form'}`;
-    case 'assert':
-      return `assert ${event.name ? `"${event.name}"` : event.selector}${event.text ? ` shows "${event.text}"` : ' is visible'}`;
+    case 'assert': {
+      const what = event.name ? `"${event.name}"` : event.selector;
+      if (event.check === 'count') return `assert ${event.count ?? '?'} like ${what}`;
+      if (event.check === 'gone') return `assert ${what} is gone`;
+      return `assert ${what}${event.text ? ` shows "${event.text}"` : ' is visible'}`;
+    }
   }
 }
+
+const ASSERT_CHECKS: Array<{ check: AssertCheck; label: string; hint: string }> = [
+  { check: 'text', label: 'Text', hint: 'Click the element to check its text.' },
+  { check: 'count', label: 'Count', hint: 'Click one of the rows to count.' },
+  { check: 'gone', label: 'Gone', hint: 'Click what should go.' },
+];
 
 async function postFlow(endpoint: string, body: string): Promise<SavedFlow> {
   const res = await fetch(`${endpoint}/flows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
@@ -111,6 +121,7 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
   if (!on) return null;
 
   const { recording, events } = snapshot;
+  const picking = snapshot.asserting || snapshot.waitingGone;
   const last = events[events.length - 1];
   const canExport = !recording && events.length > 0 && status.kind !== 'saving';
 
@@ -163,11 +174,11 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
             </button>
             <button
               type="button"
-              style={{ ...styles.button, ...(snapshot.asserting ? styles.primary : {}) }}
-              aria-pressed={snapshot.asserting}
-              onClick={() => (snapshot.asserting ? recorder.cancelAssert() : recorder.assertNext())}
+              style={{ ...styles.button, ...(picking ? styles.primary : {}) }}
+              aria-pressed={picking}
+              onClick={() => (picking ? recorder.cancelAssert() : recorder.assertNext())}
             >
-              {snapshot.asserting ? 'Cancel' : 'Assert'}
+              {picking ? 'Cancel' : 'Assert'}
             </button>
           </>
         ) : (
@@ -181,7 +192,25 @@ export function FlowtapeOverlay({ enabled, endpoint = DEFAULT_ENDPOINT, recorder
       </div>
       {snapshot.asserting ? (
         <div style={styles.preview} data-testid="flowtape-assert-hint">
-          Click the element to check. Esc cancels.
+          <div style={styles.row} role="group" aria-label="What to check">
+            {ASSERT_CHECKS.map(({ check, label }) => (
+              <button
+                key={check}
+                type="button"
+                style={{ ...styles.button, ...(snapshot.check === check ? styles.primary : {}) }}
+                aria-pressed={snapshot.check === check}
+                onClick={() => recorder.assertNext(check)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {ASSERT_CHECKS.find(({ check }) => check === snapshot.check)?.hint} Esc cancels.
+        </div>
+      ) : null}
+      {snapshot.waitingGone ? (
+        <div style={styles.preview} data-testid="flowtape-assert-hint">
+          Now do the action that removes it.
         </div>
       ) : null}
       {last ? (

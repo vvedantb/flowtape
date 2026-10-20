@@ -201,3 +201,39 @@ test('Assert records a check on the picked element without acting on it', async 
   // Toggling Assert re-renders one button between styles. React warns if they mix border shorthand and longhand.
   expect(warnings.filter((text) => /style property/.test(text))).toEqual([]);
 });
+
+test('Count and Gone checks through the overlay', async ({ page }) => {
+  await page.goto('/');
+  const overlay = overlayOf(page);
+  await overlay.getByRole('button', { name: 'Record' }).click();
+  await page.getByTestId('login-email').fill('ada@example.test');
+  await page.getByTestId('login-submit').click();
+  await expect(page).toHaveURL(/\/notes$/);
+  const notes = await page.getByTestId('note-item').count();
+
+  await overlay.getByRole('button', { name: 'Assert' }).click();
+  await overlay.getByRole('button', { name: 'Count' }).click();
+  await page.getByTestId('note-item').first().click();
+
+  await overlay.getByRole('button', { name: 'Assert' }).click();
+  await overlay.getByRole('button', { name: 'Gone' }).click();
+  await page.getByTestId('note-item').last().click();
+  await expect(overlay.getByTestId('flowtape-assert-hint')).toContainText('Now do the action that removes it');
+  await page.getByTestId('note-remove-last').click();
+  await expect(overlay.getByTestId('flowtape-assert-hint')).toBeHidden();
+
+  await overlay.getByRole('button', { name: 'Stop' }).click();
+  await overlay.getByLabel('Flow name').fill('E2E smoke');
+  await overlay.getByRole('button', { name: 'Export' }).click();
+  await expect(overlay.getByTestId('flowtape-saved')).toContainText('.flowtape/prompts/e2e-smoke.md');
+
+  const flow = JSON.parse(fs.readFileSync(files[0], 'utf8'));
+  const checks = flow.events.filter((e: { type: string }) => e.type === 'assert');
+  expect(checks).toMatchObject([{ check: 'count', count: notes }, { check: 'gone' }]);
+  // The Gone check sits after the click that removed the note.
+  const at = flow.events.findIndex((e: { type: string; check?: string }) => e.check === 'gone');
+  expect(flow.events[at - 1]).toMatchObject({ type: 'click', name: 'Remove last note' });
+  const test = fs.readFileSync(files[2], 'utf8');
+  expect(test).toContain(`await expect(screen.getByTestId("note-item")).toHaveCount(${notes});`);
+  expect(test).toMatch(/await expect\(screen\.getByText\(".+"\)\)\.toBeHidden\(\);/);
+});
