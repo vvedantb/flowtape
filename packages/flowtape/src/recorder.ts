@@ -40,6 +40,18 @@ function clean(text: string | null | undefined): string | undefined {
   return out || undefined;
 }
 
+/**
+ * Text that counts toward an accessible name: an element's text without `aria-hidden="true"` subtrees. A required
+ * marker such as `<span aria-hidden="true">*</span>` is not part of the name the runner and screen readers use.
+ */
+function nameText(node: Node | null | undefined): string {
+  if (!node) return '';
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return '';
+  if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return '';
+  return [...node.childNodes].map(nameText).join('');
+}
+
 function quote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
@@ -124,11 +136,11 @@ function labelNameFor(el: Element): string | undefined {
   if (labelledBy) {
     const text = labelledBy
       .split(/\s+/)
-      .map((id) => el.ownerDocument.getElementById(id)?.textContent ?? '')
+      .map((id) => nameText(el.ownerDocument.getElementById(id)))
       .join(' ');
     if (clean(text)) return clean(text);
   }
-  return isField(el) ? clean(el.labels?.[0]?.textContent) : undefined;
+  return isField(el) ? clean(nameText(el.labels?.[0])) : undefined;
 }
 
 /** Accessible name, roughly per the ARIA naming order. */
@@ -139,7 +151,7 @@ export function nameFor(el: Element): string | undefined {
     if (el instanceof HTMLInputElement && ['submit', 'button', 'reset'].includes(fieldType(el))) return clean(el.value);
     return clean(el.getAttribute('placeholder')) ?? clean(el.getAttribute('title'));
   }
-  return clean(el.getAttribute('title')) ?? clean(el.textContent);
+  return clean(el.getAttribute('title')) ?? clean(nameText(el));
 }
 
 /**
@@ -175,7 +187,7 @@ export function selectorsFor(el: Element): SelectorCandidate[] {
   const role = roleFor(el);
   const name = recordedNameFor(el);
   if (role && name) out.push({ strategy: 'role', role, name: scrubText(name), value: scrubText(name) });
-  const label = isField(el) ? clean(el.labels?.[0]?.textContent) ?? clean(el.getAttribute('aria-label')) : undefined;
+  const label = isField(el) ? clean(nameText(el.labels?.[0])) ?? clean(el.getAttribute('aria-label')) : undefined;
   if (label) out.push({ strategy: 'label', value: scrubText(label) });
   // A masked field's placeholder can hold example data in the shape of the secret (123-45-6789), so it is not offered.
   const placeholder = masked ? undefined : clean(el.getAttribute('placeholder'));
@@ -203,7 +215,7 @@ function countMatches(doc: Document, candidate: SelectorCandidate): number {
     case 'role':
       return all('*').filter((e) => roleFor(e) === candidate.role && nameFor(e) === candidate.name).length;
     case 'label':
-      return all('input, textarea, select').filter((e) => isField(e) && (clean(e.labels?.[0]?.textContent) ?? clean(e.getAttribute('aria-label'))) === candidate.value).length;
+      return all('input, textarea, select').filter((e) => isField(e) && (clean(nameText(e.labels?.[0])) ?? clean(e.getAttribute('aria-label'))) === candidate.value).length;
     case 'placeholder':
       return all('[placeholder]').filter((e) => clean(e.getAttribute('placeholder')) === candidate.value).length;
     case 'text':
