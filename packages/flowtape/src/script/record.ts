@@ -49,6 +49,35 @@ const IDLE_MS = 500;
 /** True when scrubbing replaces part of the URL, so the recorded URL no longer opens the same page. */
 const isRedacted = (url: string) => scrubText(url).includes(REDACTED);
 
+/** A navigation while a step was being handled. `late` when it started after the user's latest action had settled. */
+export interface BusyNavigation {
+  url: string;
+  at: number;
+  late: boolean;
+}
+
+/**
+ * Turn the timeline into steps. A late navigation becomes a navigate step at its time. Each step's outcome is the last
+ * on-time navigation after it and before the next step, so a redirect chain collapses into the step that started it.
+ * An action keeps an outcome that a redirect chain already set. `actionTimes` holds when each action happened.
+ */
+export function placeNavigations(steps: ReplayStep[], navigations: BusyNavigation[], actionTimes: ReadonlyMap<ReplayStep, number>, startedAt: number): ReplayStep[] {
+  const timeOf = (step: ReplayStep) => actionTimes.get(step) ?? startedAt + step.ts;
+  const lateSteps = new Set<ReplayStep>(
+    navigations.filter((nav) => nav.late).map((nav) => ({ type: 'navigate', ts: nav.at - startedAt, url: scrubText(nav.url), selectors: [], expected: { kind: 'url', url: scrubText(nav.url) } })),
+  );
+  const all = [...steps, ...lateSteps].sort((a, b) => timeOf(a) - timeOf(b));
+  all.forEach((step, i) => {
+    const late = lateSteps.has(step);
+    if (!late && (step.type === 'navigate' || step.expected.kind !== 'none')) return;
+    const start = timeOf(step);
+    const end = all[i + 1] ? timeOf(all[i + 1]) : Infinity;
+    const outcome = navigations.filter((n) => !n.late && n.at > start && n.at < end).at(-1);
+    if (outcome && (late || outcome.url !== step.url)) step.expected = { kind: 'url', url: late ? scrubText(outcome.url) : expectedUrl(step.url, outcome.url) };
+  });
+  return all;
+}
+
 export async function recordScript(options: RecordOptions): Promise<ScriptRecording> {
   const { page } = options;
   const settleMs = options.settleMs ?? 300;
@@ -71,7 +100,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
   // on a timeline, and stop() sorts them out by time: a navigation that started after the user's latest action had
   // settled (settleMs passed, nothing in flight, IDLE_MS of quiet network) is the user's own, and becomes a step.
   let lastActionAt: number | undefined;
-  const busyNavigations: Array<{ url: string; at: number; late: boolean }> = [];
+  const busyNavigations: BusyNavigation[] = [];
   /** When each action happened, for ordering. A merged typing step keeps its latest time. */
   const actionTimes = new Map<ReplayStep, number>();
   const settled = (now: number) => lastActionAt !== undefined && now - lastActionAt > settleMs && inflight.size === 0 && now - activityAt >= IDLE_MS;
@@ -207,32 +236,6 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
   page.on('requestfailed', onRequestDone);
   page.on('framenavigated', onNavigate);
 
-  /**
-   * Turn the timeline into steps. An action's outcome is the last on-time navigation after it and before the next
-   * step, unless a redirect chain already set a later one. A late navigation becomes a navigate step at its time,
-   * ending at the last on-time navigation after it (a redirect chain collapses into it).
-   */
-  const placeBusyNavigations = () => {
-    const timeOf = (step: ReplayStep) => actionTimes.get(step) ?? startedAt + step.ts;
-    const lateSteps: ReplayStep[] = [];
-    busyNavigations.forEach((nav, i) => {
-      if (!nav.late) return;
-      const next = busyNavigations.slice(i + 1).find((n) => n.late);
-      const following = busyNavigations.slice(i + 1).filter((n) => !n.late && (!next || n.at < next.at));
-      const final = following.at(-1)?.url ?? nav.url;
-      lateSteps.push({ type: 'navigate', ts: nav.at - startedAt, url: scrubText(nav.url), selectors: [], expected: { kind: 'url', url: scrubText(final) } });
-    });
-    const all = [...steps, ...lateSteps].sort((a, b) => timeOf(a) - timeOf(b));
-    all.forEach((step, i) => {
-      if (step.type === 'navigate' || step.expected.kind !== 'none') return;
-      const start = timeOf(step);
-      const end = all[i + 1] ? timeOf(all[i + 1]) : Infinity;
-      const outcome = busyNavigations.filter((n) => !n.late && n.at > start && n.at < end).at(-1);
-      if (outcome && outcome.url !== step.url) step.expected = { kind: 'url', url: expectedUrl(step.url, outcome.url) };
-    });
-    steps.splice(0, steps.length, ...all);
-  };
-
   return {
     async stop() {
       page.off('request', onRequest);
@@ -244,7 +247,7 @@ export async function recordScript(options: RecordOptions): Promise<ScriptRecord
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide'))).catch(() => undefined);
       await page.waitForTimeout(50).catch(() => undefined);
       await queue;
-      placeBusyNavigations();
+      steps.splice(0, steps.length, ...placeNavigations(steps, busyNavigations, actionTimes, startedAt));
       const warn = options.onWarning ?? ((message: string) => console.warn(message));
       if (isRedacted(startUrl)) warn(`flowtape: the start URL holds a redacted value, so replay cannot open it: ${scrubText(startUrl)}`);
       const replayable = steps.filter((step) => !(step.type === 'navigate' && isRedacted(step.url)));
