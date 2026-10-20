@@ -1,5 +1,5 @@
 import { REDACTED, checkableText, redactFlow, scrubText } from './redact';
-import type { FlowDocument, FlowEvent, InputEvent } from './types';
+import type { FlowDocument, FlowEvent, InputEvent, Locator } from './types';
 
 export interface PromptOptions {
   /** Where the app runs. Default: the origin of the flow's start URL. */
@@ -42,9 +42,37 @@ export function envVarFor(event: InputEvent): string {
   return `FLOWTAPE_${base || 'SECRET'}`;
 }
 
-function target(label: string | undefined, selector: string | undefined): string {
-  const name = label ? `"${label}" ` : '';
-  return selector ? `${name}(${code(selector)})` : name.trim();
+interface Target {
+  name?: string;
+  selector?: string;
+  locators?: Locator[];
+}
+
+/** A recorded strategy as a CSS selector an agent can query, or undefined when the name or text already says it. */
+function cssFor(l: Locator): string | undefined {
+  if (l.strategy === 'test-id') return `[data-testid="${l.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
+  if (l.strategy === 'css') return l.value;
+  return undefined;
+}
+
+/**
+ * The element as the agent should find it. With match counts from the recording, this is the first strategy that
+ * matched exactly one element, as in the e2e export: a positional CSS path that matched several elements is never
+ * offered on its own, because an agent that takes the first match acts on the wrong element. Flows recorded
+ * without counts keep the recorded CSS path.
+ */
+function target({ name, selector, locators }: Target): string {
+  const label = name ? `"${name}"` : '';
+  const join = (css: string | undefined, note = '') => [label, css ? `(${code(css)})` : ''].filter(Boolean).join(' ') + note;
+  if (!locators?.length) return join(selector);
+  const unique = locators.find((l) => l.matches === 1 && !l.value.includes(REDACTED) && !l.name?.includes(REDACTED));
+  if (unique) {
+    if (unique.strategy === 'text' && !name) return `with the text ${code(unique.value)}`;
+    return join(cssFor(unique));
+  }
+  const css = locators.find((l) => l.strategy === 'css');
+  const count = css?.matches ?? 0;
+  return join(css?.value ?? selector, count > 1 ? ` (that CSS path matched ${count} elements when recorded, so pick the one that fits the name and context)` : '');
 }
 
 function isTextInput(event: InputEvent): boolean {
@@ -63,10 +91,10 @@ function describe(event: FlowEvent, index: number, events: FlowEvent[], pathOf: 
     case 'click': {
       const what = event.role ?? 'element';
       const href = event.href ? ` It links to ${code(pathOf(event.href))}.` : '';
-      return `Click the ${what} ${target(event.name, event.selector)}.${href}`;
+      return `Click the ${what} ${target(event)}.${href}`;
     }
     case 'input': {
-      const field = target(event.name, event.selector);
+      const field = target(event);
       if (event.redacted) {
         const size = event.length ? ` (${event.length} characters when recorded)` : '';
         return `Fill the ${event.inputType ?? 'text'} field ${field} with the value from ${code(`$${envVarFor(event)}`)}${size}. **Redacted:** the recorded value was not stored. Never print or log it.`;
@@ -83,8 +111,9 @@ function describe(event: FlowEvent, index: number, events: FlowEvent[], pathOf: 
       return `Type ${value} into the field ${field}.${breaks}${scrubbed}`;
     }
     case 'assert': {
-      const what = `the ${event.role ?? 'element'} ${target(event.name, event.selector)}`;
-      if (event.check === 'count') return `**Check:** there are exactly ${event.count ?? 'the recorded number of'} elements like ${what}. This is an assertion, not an action.`;
+      const what = `the ${event.role ?? 'element'} ${target(event)}`;
+      // A count names a group, so it keeps the recorded selector that matched the group, not one unique element.
+      if (event.check === 'count') return `**Check:** there are exactly ${event.count ?? 'the recorded number of'} elements like the ${event.role ?? 'element'} ${target({ name: event.name, selector: event.selector })}. This is an assertion, not an action.`;
       if (event.check === 'gone') return `**Check:** ${what} is no longer on the page after the previous step. This is an assertion, not an action.`;
       const check = checkableText(event.text);
       const quoted = check && code(truncate(check.text).replace(/\r\n?|\n/g, ' '));
@@ -95,7 +124,7 @@ function describe(event: FlowEvent, index: number, events: FlowEvent[], pathOf: 
           : check.partial
             ? ` and shows text that includes ${quoted} (the rest was redacted)`
             : ` and shows ${quoted}`;
-      return `**Check:** the ${event.role ?? 'element'} ${target(event.name, event.selector)} is visible${shows}. This is an assertion, not an action: do not click it.`;
+      return `**Check:** the ${event.role ?? 'element'} ${target(event)} is visible${shows}. This is an assertion, not an action: do not click it.`;
     }
     case 'submit': {
       const how = [event.method?.toUpperCase(), event.action].filter(Boolean).join(' ');
@@ -147,7 +176,7 @@ function fuzzHints(events: FlowEvent[], pathOf: (url: string) => string): string
   for (const event of events) {
     if (event.type !== 'input' || seen.has(event.selector)) continue;
     seen.add(event.selector);
-    const field = target(event.name, event.selector);
+    const field = target(event);
     if (event.redacted) {
       out.push(`${field}: try an empty value and an obviously fake wrong value such as ${code('wrong-value-123')}. Never use real credentials.`);
     } else if (event.inputType === 'email') {
