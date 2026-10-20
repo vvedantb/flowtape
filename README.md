@@ -217,7 +217,7 @@ test("Sign in and add note", { requires: ["browser"] }, async ({ app, screen, br
 });
 ```
 
-- **Locators**: a test id first, then role and accessible name, then label, then CSS through `browser`. A test id or CSS selector that matched several elements when recorded is narrowed with `filter({ hasText })`, or `nth()` when the element has no text, its text was partly redacted or it is a field (its text is a value), because the runner fails on an ambiguous locator.
+- **Locators** are checked while you record. Each click, field and check stores every strategy (test id, role and accessible name, label, placeholder, text, CSS) with how many visible elements it matched on the page at that moment. The test uses the first one that matched exactly one, so a name that is shared by two buttons or a row that repeats is never picked. A strategy whose value was redacted is skipped, because it cannot match. Flows recorded before this have no match counts and use the old rules: a test id, then role and name, then label, then CSS, narrowed with `filter({ hasText })` or `nth()` when it matched several elements.
 - **Masked values** never reach the file. Each becomes `secrets.get("<label in kebab case>")`. Declare it as a provider in `e2e.config.ts`, as the header shows, and set `E2E_SECRET_<NAME>` when you run. The runner needs 6 or more characters.
 - **Checks**: navigations caused by a click become `expect(browser).toHaveURL(...)`, and each recorded **Assert** becomes `toBeVisible()` plus `toContainText()` (or `toHaveValue()` for a field). With no recorded check, the test ends with a `TODO`.
 - **Sign-in sessions**: write a test for an existing flow with a session from your config:
@@ -226,7 +226,7 @@ test("Sign in and add note", { requires: ["browser"] }, async ({ app, screen, br
   npx @vvedantb/flowtape e2e .flowtape/flows/sign-in-and-add-note.json --session testUser --out tests/sign-in-and-add-note.e2e.ts
   ```
 
-Recorded names are approximate and the runner matches names exactly, so a role or label locator can need a small edit. `flowToE2ETest(doc, { session })` is the same generator as a function.
+flowtape computes accessible names itself, so in rare cases a role locator can still need a small edit. `flowToE2ETest(doc, { session })` is the same generator as a function.
 
 ## Replay scripts
 

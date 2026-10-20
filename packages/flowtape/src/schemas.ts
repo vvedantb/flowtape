@@ -9,6 +9,16 @@ export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** `ts` is milliseconds since the recording started. */
 const ts = z.number().nonnegative();
 
+/** A selector strategy and how many visible elements it matched when recorded. A test generator uses the first unique one. */
+export const LocatorSchema = z.object({
+  strategy: z.enum(['test-id', 'role', 'label', 'placeholder', 'text', 'css']),
+  value: z.string(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  matches: z.number().int().nonnegative(),
+});
+const locators = z.array(LocatorSchema).optional();
+
 export const NavigateEventSchema = z.object({
   type: z.literal('navigate'),
   ts,
@@ -27,6 +37,7 @@ export const ClickEventSchema = z.object({
   href: z.string().optional(),
   /** Position among the elements that match `selector`, recorded only when more than one does. */
   nth: z.number().int().nonnegative().optional(),
+  locators,
 });
 
 export const InputEventSchema = z.object({
@@ -41,6 +52,7 @@ export const InputEventSchema = z.object({
   redacted: z.boolean(),
   /** Length of a redacted value, so an agent can type something of similar size. */
   length: z.number().int().nonnegative().optional(),
+  locators,
 });
 
 export const SubmitEventSchema = z.object({
@@ -62,6 +74,7 @@ export const AssertEventSchema = z.object({
   text: z.string().optional(),
   /** Position among the elements that match `selector`, recorded only when more than one does. */
   nth: z.number().int().nonnegative().optional(),
+  locators,
 });
 
 export const FlowEventSchema = z.discriminatedUnion('type', [
