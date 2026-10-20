@@ -259,6 +259,8 @@ With neither `--jev` nor `--no-jev`, replay uses Jev only when `TYPESAFE_API_KEY
 
 For each step, replay waits for network idle and for the DOM to stay quiet for 300 ms. It then tries the recorded selectors in order and uses the first that matches exactly one element: `test-id`, `role` (with accessible name), `label`, `placeholder`, `text`, then `css`. After the action it checks the step's `expected` outcome (URL or element). A selector hit has confidence 1.
 
+Recording handles steps one at a time, so it can fall behind a fast user. Navigations it sees while it catches up go on a timeline: a navigation that started before your latest action settled (`settleMs`, nothing in flight, then 500 ms of quiet network) is that action's outcome, even when the server takes seconds to answer. One that started later is yours, and becomes its own step in the right place.
+
 A one-time link (a magic sign-in link, a URL with `token=`) is redacted on record, so it cannot be replayed. When the app redirects from it in JavaScript, the step (or `startUrl`) keeps the clean page it redirects to. A navigation that stays on a redacted URL is left out of the script with a warning (`onWarning` in `recordScript`, a console warning in the CLI).
 
 If every selector misses and Jev is on, replay sends the current page screenshot and the recorded crop of the target to Jev. It asks whether the target is visible and where it is, then clicks the centre of the box. Jev also checks the expected outcome visually when the URL or element check fails. Jev answers use the confidence it returns. A step below the threshold fails.
