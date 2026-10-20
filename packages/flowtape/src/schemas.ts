@@ -78,6 +78,8 @@ export const AssertEventSchema = z.object({
    */
   check: z.enum(['text', 'count', 'gone']).optional(),
   count: z.number().int().nonnegative().optional(),
+  /** For `count` and `gone`: a selector with no position in it that matches elements like this one. `count` is its matches. */
+  sharedSelector: z.string().optional(),
   /** Position among the elements that match `selector`, recorded only when more than one does. */
   nth: z.number().int().nonnegative().optional(),
   locators,

@@ -166,3 +166,79 @@ describe('count, gone and exact checks', () => {
     expect(prompt).toContain('is no longer on the page after the previous step.');
   });
 });
+
+describe('count and gone on rows without unique selectors', () => {
+  let recorder: Recorder;
+  beforeEach(() => {
+    sessionStorage.clear();
+    const rows = ['Buy milk', 'Call plumber', 'Pay rent', 'Walk dog'].map((t) => `<li class="note"><span>${t}</span> <button class="del" type="button">Delete</button></li>`);
+    document.body.innerHTML = `
+      <input id="filter" placeholder="Filter">
+      <ul id="notes">${rows.join('')}</ul>
+      <ul><li data-testid="row"><span>Seen at clinic</span></li><li data-testid="row"><span>Seen at home</span></li></ul>`;
+    document.getElementById('notes')?.addEventListener('click', (event) => {
+      if (event.target instanceof HTMLButtonElement) event.target.parentElement?.remove();
+    });
+    const filter = document.getElementById('filter');
+    filter?.addEventListener('input', () => {
+      const query = filter instanceof HTMLInputElement ? filter.value : '';
+      document.querySelectorAll('li.note').forEach((li) => li.textContent?.includes(query) || li.remove());
+    });
+    recorder = createRecorder({ capture: createCapture({ debounceMs: 1000 }), persist: false });
+    recorder.start();
+  });
+  afterEach(() => recorder.stop());
+
+  const element = (selector: string, nth = 0) => {
+    const el = document.querySelectorAll(selector)[nth];
+    if (!(el instanceof HTMLElement)) throw new Error(`no ${selector}`);
+    return el;
+  };
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const exported = () => flowToE2ETest(createFlowDocument({ name: 'Notes', startUrl: 'http://localhost:5173/', events: recorder.getSnapshot().events }));
+
+  it('Count on a row without a test id counts every row, not just the picked one', () => {
+    recorder.assertNext('count');
+    element('li.note', 1).click();
+    expect(recorder.getSnapshot().events.at(-1)).toMatchObject({ check: 'count', count: 4, sharedSelector: '#notes > li' });
+    expect(exported()).toContain('await expect(browser.locator("#notes > li")).toHaveCount(4);');
+  });
+
+  it('Count on a child inside a test-id row counts the rows', () => {
+    recorder.assertNext('count');
+    element('[data-testid="row"] span', 1).click();
+    expect(recorder.getSnapshot().events.at(-1)).toMatchObject({ check: 'count', count: 2 });
+    expect(exported()).toContain('await expect(screen.getByTestId("row")).toHaveCount(2);');
+  });
+
+  it.each([0, 2])('Gone on a non-unique Delete button, then deleting row %i, checks a count that holds after', async (nth) => {
+    recorder.assertNext('gone');
+    element('button.del', nth).click();
+    element('button.del', nth).click();
+    await flush();
+    const out = exported();
+    expect(out).toContain('await expect(browser.locator("button.del")).toHaveCount(3);');
+    expect(document.querySelectorAll('button.del')).toHaveLength(3);
+  });
+
+  it('Count with no position-free selector gives a TODO, not a positional check', () => {
+    document.body.innerHTML = '<div><p>One</p><p>Two</p></div><div><p>Three</p></div>';
+    recorder.assertNext('count');
+    element('p', 1).click();
+    expect(exported()).toContain('// TODO: no selector matches elements like the picked one without its position.');
+    expect(exported()).not.toContain('await expect(');
+  });
+
+  it('Gone after debounced typing records the typing first', async () => {
+    recorder.assertNext('gone');
+    element('li.note span', 2).click();
+    const filter = element('#filter');
+    if (!(filter instanceof HTMLInputElement)) throw new Error('no filter');
+    filter.value = 'milk';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    const types = recorder.getSnapshot().events.map((e) => (e.type === 'assert' ? `assert:${e.check}` : e.type));
+    expect(types.slice(-2)).toEqual(['input', 'assert:gone']);
+    expect(exported()).toContain('await expect(screen.getByText("Pay rent")).toBeHidden();');
+  });
+});

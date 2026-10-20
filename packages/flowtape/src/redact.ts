@@ -193,7 +193,15 @@ export function redactEvent(event: FlowEvent): FlowEvent {
     case 'submit':
       return { ...event, selector: scrubOptional(event.selector), action: scrubOptional(event.action), method: scrubOptional(event.method) };
     case 'assert':
-      return { ...event, selector: scrubText(event.selector), role: scrubOptional(event.role), name: scrubOptional(event.name), text: scrubOptional(event.text), locators: scrubLocators(event.locators) };
+      return {
+        ...event,
+        selector: scrubText(event.selector),
+        sharedSelector: scrubOptional(event.sharedSelector),
+        role: scrubOptional(event.role),
+        name: scrubOptional(event.name),
+        text: scrubOptional(event.text),
+        locators: scrubLocators(event.locators),
+      };
   }
 }
 

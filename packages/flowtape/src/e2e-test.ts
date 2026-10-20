@@ -94,25 +94,25 @@ function isExactValue(text: string): boolean {
   return /\d/.test(text) && text.length <= 40;
 }
 
-/** The locator that rows of the same kind share: the recorded test id or CSS strategy, never narrowed. */
-function sharedLocator(event: Extract<FlowEvent, { type: 'assert' }>): string {
-  const shared = event.locators?.find((l) => (l.strategy === 'test-id' || l.strategy === 'css') && !l.value.includes(REDACTED));
-  if (shared?.strategy === 'test-id') return `screen.getByTestId(${str(shared.value)})`;
-  if (shared) return `browser.locator(${str(shared.value)})`;
-  const testId = TEST_ID.exec(event.selector)?.[1];
-  return testId ? `screen.getByTestId(${str(testId)})` : `browser.locator(${str(event.selector)})`;
+/** The locator that rows of the same kind share: the recorded position-free selector, never narrowed. */
+function sharedLocator(event: Extract<FlowEvent, { type: 'assert' }>): string | undefined {
+  const shared = event.sharedSelector;
+  if (!shared || shared.includes(REDACTED)) return undefined;
+  const testId = TEST_ID.exec(shared)?.[1];
+  return testId ? `screen.getByTestId(${str(testId)})` : `browser.locator(${str(shared)})`;
 }
 
 function countOrGoneLines(event: Extract<FlowEvent, { type: 'assert' }>): string[] {
   const shared = sharedLocator(event);
   if (event.check === 'count') {
+    if (!shared) return ['// TODO: no selector matches elements like the picked one without its position. Add a toHaveCount check.'];
     return event.count === undefined ? ['// TODO: the recorded count is missing. Add a toHaveCount check.'] : [`await expect(${shared}).toHaveCount(${event.count});`];
   }
   // Gone: a locator that named this element (its own text or name) must now match nothing.
   const own = event.locators?.find((l) => (l.strategy === 'text' || l.strategy === 'role' || l.strategy === 'label') && l.matches === 1 && !l.value.includes(REDACTED));
   const ownCode = own && code(own);
   if (ownCode) return [`await expect(${ownCode}).toBeHidden();`];
-  if (event.count !== undefined) return [`// The element had no unique text or name, so this checks there is one fewer like it.`, `await expect(${shared}).toHaveCount(${Math.max(0, event.count - 1)});`];
+  if (shared && event.count !== undefined) return [`// The element had no unique text or name, so this checks there is one fewer like it.`, `await expect(${shared}).toHaveCount(${Math.max(0, event.count - 1)});`];
   return ['// TODO: check that the element is gone.'];
 }
 

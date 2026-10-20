@@ -242,6 +242,20 @@ function nthOf(el: Element, selector: string): number | undefined {
 
 const MAX_ASSERT_TEXT = 200;
 
+/**
+ * A selector for elements like `el`, with no position in it, so it matches the other rows of a list too: the nearest
+ * test id on `el` or an ancestor (the row a child sits in), else its CSS path without its own `:nth-of-type`, else
+ * tag and classes. Undefined when only a positional selector would do.
+ */
+function sharedSelectorFor(el: Element): string | undefined {
+  const testId = el.closest('[data-testid]')?.getAttribute('data-testid');
+  if (testId) return `[data-testid=${quote(testId)}]`;
+  const path = selectorFor(el).replace(/:nth-of-type\(\d+\)$/, '');
+  if (!path.includes(':nth-of-type(')) return path;
+  const classes = [...el.classList].filter((c) => /^[A-Za-z_][\w-]*$/.test(c));
+  return classes.length ? `${el.tagName.toLowerCase()}.${classes.join('.')}` : undefined;
+}
+
 export type AssertCheck = 'text' | 'count' | 'gone';
 
 /** The element the user picked in assert mode. A masked element gives a visibility-only check. */
@@ -251,6 +265,7 @@ function assertEvent(picked: Element, ts: number, check: AssertCheck = 'text'): 
   const text = masked ? undefined : isField(el) ? el.value : clean(el.textContent);
   const selector = selectorFor(el);
   const locators = locatorsFor(el);
+  const shared = check === 'text' ? undefined : sharedSelectorFor(el);
   return {
     type: 'assert',
     ts,
@@ -261,8 +276,9 @@ function assertEvent(picked: Element, ts: number, check: AssertCheck = 'text'): 
     nth: nthOf(el, selector),
     locators,
     check: check === 'text' ? undefined : check,
-    // Elements like this one: the test id or CSS strategy, which a list's rows share.
-    count: check === 'text' ? undefined : locators.find((l) => l.strategy === 'test-id' || l.strategy === 'css')?.matches,
+    sharedSelector: shared,
+    // Visible elements like this one, which a list's rows share.
+    count: shared === undefined ? undefined : countMatches(el.ownerDocument, { strategy: 'css', value: shared }),
   };
 }
 
@@ -592,6 +608,8 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
     const observer = new MutationObserver(() => {
       if (!gone()) return;
       stopWaiting();
+      // Debounced typing (a filter box) can be what removed it, so it is recorded first.
+      capture.flush();
       record({ ...picked, ts: capture.now() });
     });
     observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
