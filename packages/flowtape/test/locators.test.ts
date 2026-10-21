@@ -25,6 +25,19 @@ describe('locatorsFor', () => {
     expect(locatorsFor(el('#tier')).map((l) => [l.strategy, l.matches])).toEqual([['role', 1], ['label', 1], ['placeholder', 1], ['css', 1]]);
   });
 
+  it('leaves aria-hidden text, such as a required marker, out of names and labels', () => {
+    document.body.innerHTML = `
+      <label for="email">Email address<span aria-hidden="true"> *</span></label><input id="email" name="email">
+      <span id="lb">Search<span aria-hidden="true">⌘K</span></span><input id="q" aria-labelledby="lb">
+      <button id="go">Save<span aria-hidden="true"> →</span></button>`;
+    expect(locatorsFor(el('#email')).slice(0, 2)).toEqual([
+      { strategy: 'role', role: 'textbox', name: 'Email address', value: 'Email address', matches: 1 },
+      { strategy: 'label', value: 'Email address', matches: 1 },
+    ]);
+    expect(locatorsFor(el('#q'))[0]).toMatchObject({ strategy: 'role', name: 'Search', matches: 1 });
+    expect(locatorsFor(el('#go'))[0]).toMatchObject({ strategy: 'role', name: 'Save', matches: 1 });
+  });
+
   it('never offers the name or text of a masked non-field, so allowlist mode keeps names out', () => {
     document.body.innerHTML = '<main data-flowtape-allowlist><a id="p" href="/people/1">Jane Doe</a><button id="s">Save placement</button></main>';
     expect(JSON.stringify(selectorsFor(el('#p')))).not.toContain('Jane');
