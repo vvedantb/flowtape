@@ -66,3 +66,26 @@ describe('flowToPrompt', () => {
     expect(envVarFor({ type: 'input', ts: 0, selector: '#a', value: null, redacted: true })).toBe('FLOWTAPE_SECRET');
   });
 });
+
+describe('flowToPrompt picks the element the way the e2e export does', () => {
+  const css = 'div > a:nth-of-type(1)';
+  const click = (locators: object[], name?: string) =>
+    flowToPrompt(makeFlow([{ type: 'click', ts: 0, selector: css, role: 'link', ...(name ? { name } : {}), locators } as never]));
+
+  it('drops a positional CSS path that matched several elements when the name is unique', () => {
+    const out = click([{ strategy: 'role', role: 'link', name: 'AQP nursing homes', value: 'AQP nursing homes', matches: 1 }, { strategy: 'css', value: css, matches: 3 }], 'AQP nursing homes');
+    expect(out).toContain('1. Click the link "AQP nursing homes".');
+    expect(out).not.toContain(css);
+  });
+
+  it('shows a test id or CSS path only when it was the first to match one element', () => {
+    expect(click([{ strategy: 'test-id', value: 'aqp', matches: 1 }, { strategy: 'css', value: css, matches: 1 }], 'AQP')).toContain('Click the link "AQP" (`[data-testid="aqp"]`).');
+    expect(click([{ strategy: 'role', role: 'link', name: 'AQP', value: 'AQP', matches: 2 }, { strategy: 'css', value: css, matches: 1 }], 'AQP')).toContain(`Click the link "AQP" (\`${css}\`).`);
+    expect(click([{ strategy: 'text', value: 'Open', matches: 1 }, { strategy: 'css', value: css, matches: 2 }])).toContain('Click the link with the text `Open`.');
+  });
+
+  it('warns when nothing recorded was unique, and keeps old flows as they were', () => {
+    expect(click([{ strategy: 'role', role: 'link', name: 'AQP', value: 'AQP', matches: 2 }, { strategy: 'css', value: css, matches: 3 }], 'AQP')).toContain('that CSS path matched 3 elements when recorded');
+    expect(click([], 'AQP')).toContain(`Click the link "AQP" (\`${css}\`).`);
+  });
+});
