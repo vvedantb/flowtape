@@ -1,7 +1,6 @@
-import { IconFile } from "@tabler/icons-react";
-import { Button, landingPanelClass } from "@vvedantb/ui";
+import { IconCopy, IconFile } from "@tabler/icons-react";
+import { Button, CodeBlock, CodeBlockCopyButton, landingPanelClass } from "@vvedantb/ui";
 import { useState, type ReactNode } from "react";
-import { CopyButton } from "./CopyButton";
 
 /** Browser-window frame shared by the product mocks. */
 export function MockWindow({ url, tag, label, children }: { url: string; tag: string; label: string; children: ReactNode }) {
@@ -186,13 +185,12 @@ export function ExportMock() {
       ) : null}
       <div className="mt-auto flex items-center justify-end gap-2">
         {saved ? (
-          <CopyButton
-            text={`Follow @.flowtape/prompts/${slug}.md against the running app`}
-            label="Copy prompt"
-            size="sm"
-          >
-            Copy prompt
-          </CopyButton>
+          <CodeBlock code={`Follow @.flowtape/prompts/${slug}.md against the running app`} plain className="w-auto bg-transparent">
+            <CodeBlockCopyButton variant="outline" size="sm" aria-label="Copy prompt">
+              Copy prompt
+              <IconCopy size={16} aria-hidden />
+            </CodeBlockCopyButton>
+          </CodeBlock>
         ) : null}
         <Button type="button" size="sm" onClick={() => setSaved(true)}>
           Export

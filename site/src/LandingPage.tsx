@@ -5,6 +5,7 @@ import {
   IconBrandNpm,
   IconChecklist,
   IconCode,
+  IconCopy,
   IconFileExport,
   IconLayersLinked,
   IconPlayerPlay,
@@ -15,37 +16,81 @@ import {
 } from "@tabler/icons-react";
 import {
   Button,
+  CodeBlock,
+  CodeBlockCopyButton,
   LandingFeatureCard,
   LandingFooter,
   LandingNavMenu,
   LandingPageLayout,
   LandingSection,
   LandingSectionHeading,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   landingFooterLinkClass,
+  landingPanelClass,
 } from "@vvedantb/ui";
-import { CodeBlock } from "./CodeBlock";
-import { CopyButton } from "./CopyButton";
+import type { ReactNode } from "react";
 import { GITHUB_URL, HERO_CAPABILITIES, INSTALL_COMMAND, NAV_LINKS, NPM_URL } from "./content";
 import { LandingCta, LandingHero, LandingNav, LandingReveal, LandingRevealItem } from "./kit";
 import { AssertMock, ExportMock, HistoryMock, PromptMock, RecordMock, RedactionMock } from "./Mocks";
-import { Tabs } from "./Tabs";
 import { Wordmark } from "./Wordmark";
 
 const github = { href: GITHUB_URL, icon: <IconBrandGithub size={16} aria-hidden /> };
 
 function InstallButton({ size = "lg" }: { size?: "lg" | "default" }) {
   return (
-    <CopyButton
-      text={INSTALL_COMMAND}
-      label={`Copy install command: ${INSTALL_COMMAND}`}
-      size={size}
-      className="w-full justify-between gap-3 font-mono text-xs min-[400px]:text-sm sm:w-auto"
-    >
-      <span>
-        <span aria-hidden className="opacity-50">$ </span>
-        {INSTALL_COMMAND}
-      </span>
-    </CopyButton>
+    <CodeBlock code={INSTALL_COMMAND} plain className="w-full bg-transparent sm:w-auto">
+      <CodeBlockCopyButton
+        variant="outline"
+        size={size}
+        aria-label={`Copy install command: ${INSTALL_COMMAND}`}
+        className="w-full justify-between gap-3 font-mono text-xs min-[400px]:text-sm sm:w-auto"
+      >
+        <span>
+          <span aria-hidden className="opacity-50">$ </span>
+          {INSTALL_COMMAND}
+        </span>
+        <IconCopy size={16} aria-hidden />
+      </CodeBlockCopyButton>
+    </CodeBlock>
+  );
+}
+
+type TabItem = { id: string; label: string; icon?: ReactNode; content: ReactNode };
+
+function TabSet({ items, label }: { items: readonly TabItem[]; label: string }) {
+  return (
+    <Tabs defaultValue={items[0]!.id}>
+      <TabsList variant="segmented" aria-label={label} className="mb-6">
+        {items.map((t) => (
+          <TabsTrigger key={t.id} value={t.id}>
+            {t.icon}
+            {t.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      {items.map((t) => (
+        <TabsContent key={t.id} value={t.id}>
+          {t.content}
+        </TabsContent>
+      ))}
+    </Tabs>
+  );
+}
+
+function Snippet({ title, code, copy = false }: { title: string; code: string; copy?: boolean }) {
+  return (
+    <CodeBlock code={code} plain className={landingPanelClass}>
+      <div className="flex h-10 items-center justify-between border-b border-separator px-4 font-mono text-xs text-muted">
+        <span className="truncate">{title}</span>
+        {copy ? <CodeBlockCopyButton aria-label={`Copy: ${title}`} className="-mr-2" /> : null}
+      </div>
+      <pre className="m-0 overflow-x-auto p-4 font-mono text-[0.8125rem] leading-relaxed text-foreground">
+        <code>{code}</code>
+      </pre>
+    </CodeBlock>
   );
 }
 
@@ -141,7 +186,7 @@ function Demo() {
           />
         </LandingRevealItem>
         <LandingRevealItem className="mt-10">
-          <Tabs
+          <TabSet
             label="Demo steps"
             items={[
               {
@@ -272,7 +317,7 @@ function Features() {
                   />
                 </>
               }
-              mock={<CodeBlock title="Terminal" code={CLAUDE_CMD} copy />}
+              mock={<Snippet title="Terminal" code={CLAUDE_CMD} copy />}
             />
           </LandingRevealItem>
         </LandingReveal>
@@ -436,7 +481,7 @@ const Step = ({ n, label, children }: { n: number; label: string; children: Reac
 );
 
 function Setup() {
-  const install = <Step n={1} label="Install the package."><CodeBlock title="Terminal" code={INSTALL_COMMAND} copy /></Step>;
+  const install = <Step n={1} label="Install the package."><Snippet title="Terminal" code={INSTALL_COMMAND} copy /></Step>;
   return (
     <LandingSection id="setup">
       <LandingReveal>
@@ -448,7 +493,7 @@ function Setup() {
           />
         </LandingRevealItem>
         <LandingRevealItem className="mt-10">
-          <Tabs
+          <TabSet
             label="Framework"
             items={[
               {
@@ -457,8 +502,8 @@ function Setup() {
                 content: (
                   <div className="grid max-w-3xl grid-cols-1 gap-6">
                     {install}
-                    <Step n={2} label="Add the plugin."><CodeBlock title="vite.config.ts" code={VITE_CONFIG} /></Step>
-                    <Step n={3} label="Mount the overlay once."><CodeBlock title="main.tsx" code={VITE_MAIN} /></Step>
+                    <Step n={2} label="Add the plugin."><Snippet title="vite.config.ts" code={VITE_CONFIG} /></Step>
+                    <Step n={3} label="Mount the overlay once."><Snippet title="main.tsx" code={VITE_MAIN} /></Step>
                   </div>
                 ),
               },
@@ -468,8 +513,8 @@ function Setup() {
                 content: (
                   <div className="grid max-w-3xl grid-cols-1 gap-6">
                     {install}
-                    <Step n={2} label="Add the route (App Router)."><CodeBlock title="app/api/flowtape/[...path]/route.ts" code={NEXT_ROUTE} /></Step>
-                    <Step n={3} label="Render the overlay in the layout."><CodeBlock title="app/layout.tsx" code={NEXT_LAYOUT} /></Step>
+                    <Step n={2} label="Add the route (App Router)."><Snippet title="app/api/flowtape/[...path]/route.ts" code={NEXT_ROUTE} /></Step>
+                    <Step n={3} label="Render the overlay in the layout."><Snippet title="app/layout.tsx" code={NEXT_LAYOUT} /></Step>
                     <p className="text-sm text-muted">
                       Next.js uses <C>/api/flowtape</C>, not <C>/__flowtape</C>. Pages Router and handler options are in the README.
                     </p>
