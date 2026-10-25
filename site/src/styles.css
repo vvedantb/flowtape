@@ -1,0 +1,16 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap");
+@import "tailwindcss";
+@import "@vvedantb/ui/tokens";
+@import "@vvedantb/ui/landing.css";
+@source "../node_modules/@vvedantb/ui/src/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
