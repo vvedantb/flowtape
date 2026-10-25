@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>flowtape — record a flow, replay it with an agent</title>
-<meta name="description" content="flowtape is a dev-only overlay for Vite + React apps. Record a user journey, export it as JSON and a Claude Code prompt, and replay it in a real browser.">
+<meta name="description" content="flowtape is a dev-only overlay for Vite + React and Next.js apps. Record a user journey, export it as JSON and a Claude Code prompt, and keep an opt-in, redacted session history.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=swap">
+<script>document.documentElement.classList.add('js');</script>
 <style>
 :root {
   color-scheme: light;
@@ -18,7 +19,8 @@
   --muted: oklch(48% 0 0);
   --surface: oklch(100% 0 0);
   --separator: oklch(90% 0 0);
-  --focus-ring: color-mix(in oklch, var(--foreground) 40%, transparent);
+  --card: color-mix(in oklch, var(--foreground) 4%, var(--background));
+  --card-hover: color-mix(in oklch, var(--foreground) 7%, var(--background));
   --sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -30,7 +32,7 @@
     --background: oklch(12% 0 0);
     --foreground: oklch(99.11% 0 0);
     --muted: oklch(72% 0 0);
-    --surface: oklch(19% 0 0);
+    --surface: oklch(17% 0 0);
     --separator: oklch(26% 0 0);
   }
 }
@@ -46,75 +48,99 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 a { color: inherit; }
+button { font-family: inherit; color: inherit; }
 code, pre, kbd { font-family: var(--mono); }
-:focus-visible {
-  outline: 2px solid var(--foreground);
-  outline-offset: 2px;
-  border-radius: 0.5rem;
-}
+:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; border-radius: 0.5rem; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 .skip {
-  position: absolute; left: 1rem; top: -3rem; z-index: 50;
+  position: absolute; left: 1rem; top: -3rem; z-index: 60;
   padding: 0.5rem 0.875rem; border-radius: 0.5rem;
   background: var(--foreground); color: var(--background);
   font-size: 0.875rem; text-decoration: none;
 }
 .skip:focus { top: 0.75rem; }
-
-.shell {
-  position: relative;
-  width: 100%;
-  max-width: 72rem;
-  margin: 0 auto;
-  padding: 0 1.25rem;
-}
+.shell { position: relative; width: 100%; max-width: 72rem; margin: 0 auto; padding: 0 1.25rem; }
 @media (min-width: 640px) { .shell { padding: 0 2rem; } }
 @media (min-width: 1024px) { .shell { padding: 0 2.5rem; } }
 
-/* Nav */
+/* Header */
 .nav {
-  position: sticky; top: 0; z-index: 30;
-  border-bottom: 1px solid var(--separator);
+  position: sticky; top: 0; z-index: 40;
   background: color-mix(in oklch, var(--background) 80%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 200ms;
 }
-.nav .shell {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-  height: 3.5rem;
-}
-@media (min-width: 640px) { .nav .shell { height: 4rem; } }
+.nav.scrolled { border-bottom-color: var(--separator); }
+.nav .shell { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; height: 3.5rem; }
+@media (min-width: 768px) { .nav .shell { display: grid; grid-template-columns: 1fr auto 1fr; height: 4rem; } }
 .wordmark {
   display: inline-flex; align-items: center; gap: 0.5rem;
-  font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em;
-  text-decoration: none;
+  font-family: var(--serif); font-weight: 400; font-synthesis: none;
+  font-size: 1.5rem; line-height: 1; letter-spacing: -0.01em; text-decoration: none;
 }
-.wordmark-mark {
-  width: 0.5rem; height: 0.5rem; border-radius: 999px;
-  background: var(--foreground);
-}
-.nav-links { display: flex; align-items: center; gap: 0.25rem; }
-.nav-links a {
-  display: inline-flex; align-items: center; height: 2.5rem;
-  padding: 0 0.75rem; border-radius: 0.5rem;
-  font-size: 0.875rem; color: var(--muted); text-decoration: none;
+.wordmark-mark { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--foreground); }
+.nav-links { display: none; align-items: center; gap: 0.25rem; }
+@media (min-width: 768px) { .nav-links { display: flex; } }
+.nav-links a, .nav-ext a.link {
+  display: inline-flex; align-items: center; height: 2.5rem; padding: 0 0.75rem;
+  border-radius: 999px; font-size: 0.875rem; color: var(--muted); text-decoration: none;
   transition: color 150ms, background-color 150ms;
 }
-.nav-links a:hover {
-  color: var(--foreground);
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+.nav-links a:hover, .nav-ext a.link:hover { color: var(--foreground); background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+.nav-ext { display: flex; align-items: center; justify-content: flex-end; gap: 0.25rem; }
+.nav-ext a.link { display: none; }
+@media (min-width: 640px) { .nav-ext a.link { display: inline-flex; } }
+.menu-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.5rem; height: 2.5rem; border: 0; border-radius: 999px; background: transparent; cursor: pointer;
 }
+.menu-btn:hover { background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+@media (min-width: 768px) { .menu-btn { display: none; } }
+.menu-btn svg { width: 20px; height: 20px; }
+.menu-btn .x { display: none; }
+.menu-btn[aria-expanded="true"] .x { display: block; }
+.menu-btn[aria-expanded="true"] .bars { display: none; }
+.mobile-menu {
+  display: none; border-top: 1px solid var(--separator);
+  background: var(--background);
+}
+.mobile-menu.open { display: block; animation: rise 300ms var(--ease) both; }
+@media (min-width: 768px) { .mobile-menu.open { display: none; } }
+.mobile-menu .shell { display: grid; gap: 0.25rem; height: auto; padding-top: 0.75rem; padding-bottom: 1rem; }
+.mobile-menu a { padding: 0.625rem 0; font-size: 1rem; text-decoration: none; color: var(--muted); }
+.mobile-menu a:hover { color: var(--foreground); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  height: 2.75rem; padding: 0 1.375rem;
+  border-radius: 999px; border: 1px solid transparent;
+  font: 500 0.9375rem/1 var(--sans);
+  text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: background-color 150ms, border-color 150ms, opacity 150ms, transform 150ms;
+}
+.btn:active { transform: scale(0.98); }
+.btn-sm { height: 2.25rem; padding: 0 1rem; font-size: 0.875rem; }
+.btn-primary { background: var(--foreground); color: var(--background); }
+.btn-primary:hover { opacity: 0.88; }
+.btn-outline { background: transparent; border-color: var(--separator); }
+.btn-outline:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); }
+.btn .arrow { transition: transform 200ms var(--ease); }
+.btn:hover .arrow { transform: translateX(3px); }
+.cmd { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; }
+.cmd .prompt { color: var(--muted); }
+.icon { width: 16px; height: 16px; flex: none; }
+.copy-icon { color: var(--muted); }
 
 /* Atmosphere */
 .atmosphere {
-  position: relative;
-  overflow: hidden;
-  background-color: var(--background);
+  position: relative; overflow: hidden; background-color: var(--background);
   background-image:
     radial-gradient(ellipse 90% 55% at 50% -12%, color-mix(in oklch, var(--foreground) 8%, transparent), transparent 58%),
     radial-gradient(ellipse 45% 35% at 100% 100%, color-mix(in oklch, var(--foreground) 4%, transparent), transparent 55%),
@@ -123,12 +149,8 @@ code, pre, kbd { font-family: var(--mono); }
   background-size: 100% 100%, 100% 100%, 56px 56px, 56px 56px;
 }
 .grain::after {
-  content: "";
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  opacity: 0.22;
-  mix-blend-mode: overlay;
+  content: ""; pointer-events: none; position: absolute; inset: 0;
+  opacity: 0.22; mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
   background-size: 128px 128px;
 }
@@ -137,265 +159,399 @@ code, pre, kbd { font-family: var(--mono); }
   background: radial-gradient(ellipse 72% 58% at 50% 42%, var(--background) 0%, color-mix(in oklch, var(--background) 82%, transparent) 46%, transparent 74%);
 }
 @media (max-width: 1023px) {
-  .scrim {
-    background: radial-gradient(ellipse 90% 70% at 50% 28%, var(--background) 0%, color-mix(in oklch, var(--background) 88%, transparent) 52%, transparent 78%);
-  }
+  .scrim { background: radial-gradient(ellipse 90% 70% at 50% 28%, var(--background) 0%, color-mix(in oklch, var(--background) 88%, transparent) 52%, transparent 78%); }
 }
 
 /* Hero */
-.hero { padding: 3rem 0 4rem; position: relative; z-index: 1; }
-@media (min-width: 640px) { .hero { padding: 5rem 0 5rem; } }
-@media (min-width: 1024px) { .hero { padding: 6rem 0 6rem; } }
-.hero-inner { max-width: 48rem; margin: 0 auto; text-align: center; }
+.hero { position: relative; z-index: 1; padding: 3.5rem 0 4rem; }
+@media (min-width: 640px) { .hero { padding: 6rem 0 6rem; } }
+@media (min-width: 1024px) { .hero { padding: 7.5rem 0 7rem; } }
+.hero-inner { max-width: 52rem; margin: 0 auto; text-align: center; }
 .badge {
-  display: inline-flex; align-items: center; gap: 0.5rem;
-  margin: 0 0 1.5rem;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid var(--separator); border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 0.5rem; margin: 0 0 1.5rem;
+  padding: 0.25rem 0.75rem; border: 1px solid var(--separator); border-radius: 999px;
   background: color-mix(in oklch, var(--surface) 70%, transparent);
   font-size: 0.75rem; color: var(--muted);
 }
 .pulse-dot {
-  width: 0.375rem; height: 0.375rem; border-radius: 999px;
-  background: var(--foreground);
+  width: 0.375rem; height: 0.375rem; border-radius: 999px; background: var(--foreground);
   animation: pulse-dot 2.4s ease-in-out infinite;
 }
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.45; box-shadow: 0 0 0 0 color-mix(in oklch, var(--foreground) 35%, transparent); }
   50% { opacity: 1; box-shadow: 0 0 0 6px color-mix(in oklch, var(--foreground) 0%, transparent); }
 }
-h1, h2 {
-  font-family: var(--serif);
-  font-weight: 400;
-  text-wrap: balance;
-  margin: 0;
-}
-h1 {
-  font-size: 2.6rem;
-  line-height: 1;
-  letter-spacing: -0.025em;
-}
-@media (min-width: 400px) { h1 { font-size: 3.1rem; } }
-@media (min-width: 640px) { h1 { font-size: 3.9rem; } }
-@media (min-width: 1024px) { h1 { font-size: 4.85rem; } }
-h1 em, h2 em { font-style: italic; color: color-mix(in oklch, var(--foreground) 85%, transparent); }
+h1, h2, h3 { font-family: var(--sans); margin: 0; text-wrap: balance; }
+h1 { font-weight: 500; font-size: 2.75rem; line-height: 1; letter-spacing: -0.045em; }
+@media (min-width: 400px) { h1 { font-size: 3.25rem; } }
+@media (min-width: 640px) { h1 { font-size: 4.5rem; } }
+@media (min-width: 1024px) { h1 { font-size: 5.5rem; } }
 .lede {
-  max-width: 36rem; margin: 1.25rem auto 0;
-  font-size: 0.9375rem; line-height: 1.65; color: var(--muted);
-  text-wrap: pretty;
+  max-width: 34rem; margin: 1.25rem auto 0; font-size: 1rem; line-height: 1.6; color: var(--muted); text-wrap: pretty;
 }
-@media (min-width: 640px) { .lede { margin-top: 1.5rem; font-size: 1.125rem; } }
-.cta {
-  display: flex; flex-direction: column; align-items: stretch; justify-content: center;
-  gap: 0.625rem; margin-top: 1.75rem;
-}
+@media (min-width: 640px) { .lede { margin-top: 1.5rem; font-size: 1.1875rem; } }
+.cta { display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 0.625rem; margin-top: 1.75rem; }
 @media (min-width: 640px) { .cta { flex-direction: row; align-items: center; gap: 0.75rem; margin-top: 2.25rem; } }
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  height: 2.75rem; padding: 0 1.25rem;
-  border-radius: 0.5rem; border: 1px solid transparent;
-  font: 500 0.9375rem/1 var(--sans);
-  text-decoration: none; cursor: pointer;
-  transition: background-color 150ms, border-color 150ms, opacity 150ms, transform 150ms;
-}
-.btn:active { transform: scale(0.98); }
-.btn-primary { background: var(--foreground); color: var(--background); }
-.btn-primary:hover { opacity: 0.88; }
-.btn-outline {
-  background: transparent; color: var(--foreground);
-  border-color: var(--separator);
-}
-.btn-outline:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); }
-.cmd { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; }
-.cmd .prompt { color: var(--muted); }
-.copy-icon { width: 15px; height: 15px; flex: none; color: var(--muted); }
-.pills {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem;
-  list-style: none; margin: 2rem 0 0; padding: 0;
-}
+.cta .btn { max-width: 100%; }
+.pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; list-style: none; margin: 2rem 0 0; padding: 0; }
 @media (min-width: 640px) { .pills { margin-top: 2.5rem; } }
+.pills-left { justify-content: flex-start; margin-top: 1.25rem; }
 .pill {
-  padding: 0.25rem 0.75rem;
+  display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3125rem 0.75rem;
   border: 1px solid var(--separator); border-radius: 999px;
   background: color-mix(in oklch, var(--surface) 60%, transparent);
-  font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--muted);
+  font-size: 0.8125rem; line-height: 1.2; color: var(--muted);
+  transition: color 150ms, border-color 150ms;
+}
+.pill:hover { color: var(--foreground); border-color: color-mix(in oklch, var(--foreground) 30%, transparent); }
+.pill svg { width: 13px; height: 13px; }
+.hint { margin: 1.25rem 0 0; font-size: 0.8125rem; color: var(--muted); }
+kbd {
+  font-size: 0.75em; padding: 0.0625rem 0.4375rem; border: 1px solid var(--separator);
+  border-radius: 999px; background: color-mix(in oklch, var(--surface) 70%, transparent);
 }
 
-/* Load fade-up */
+/* Entrance */
 .rise { animation: rise 700ms var(--ease) both; }
 .rise-1 { animation-delay: 80ms; }
 .rise-2 { animation-delay: 180ms; }
 .rise-3 { animation-delay: 280ms; }
 .rise-4 { animation-delay: 380ms; }
 .rise-5 { animation-delay: 480ms; }
-@keyframes rise {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
-}
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity 700ms var(--ease), transform 700ms var(--ease); transition-delay: var(--d, 0ms); }
+.js .reveal.in { opacity: 1; transform: none; }
 
 /* Sections */
-.section {
-  border-top: 1px solid var(--separator);
-  padding: 5rem 0;
-  scroll-margin-top: 4rem;
-}
+.section { padding: 5rem 0; scroll-margin-top: 3.5rem; }
 @media (min-width: 640px) { .section { padding: 7rem 0; } }
-@media (min-width: 1024px) { .section { padding: 8rem 0; } }
+@media (min-width: 1024px) { .section { padding: 8.5rem 0; } }
+.section-tight { padding-top: 0; }
 .heading { max-width: 42rem; }
+.heading.center { margin: 0 auto; text-align: center; }
+.heading.center .intro { margin-left: auto; margin-right: auto; }
 .eyebrow {
-  margin: 0 0 0.75rem;
-  font-size: 11px; font-weight: 500; text-transform: uppercase;
-  letter-spacing: 0.22em; color: var(--muted);
+  margin: 0 0 0.75rem; font-size: 0.8125rem; font-weight: 500; color: var(--muted);
 }
-@media (min-width: 640px) { .eyebrow { font-size: 12px; letter-spacing: 0.28em; } }
-h2 { font-size: 2.25rem; line-height: 1.05; letter-spacing: -0.02em; }
+h2 { font-weight: 500; font-size: 2.25rem; line-height: 1.04; letter-spacing: -0.04em; }
 @media (min-width: 640px) { h2 { font-size: 3.25rem; } }
-.intro {
-  max-width: 36rem; margin: 1rem 0 0;
-  font-size: 0.9375rem; line-height: 1.65; color: var(--muted); text-wrap: pretty;
-}
-@media (min-width: 640px) { .intro { margin-top: 1.25rem; font-size: 1rem; } }
-.intro code, .cell code, .card code, li code, td code, .note code {
-  font-size: 0.85em;
-  padding: 0.0625rem 0.3125rem;
-  border-radius: 0.3125rem;
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--foreground);
+.intro { max-width: 34rem; margin: 1rem 0 0; font-size: 1rem; line-height: 1.65; color: var(--muted); text-wrap: pretty; }
+@media (min-width: 640px) { .intro { margin-top: 1.25rem; font-size: 1.0625rem; } }
+code.i, li code, .intro code, .card code, td code, .note code {
+  font-size: 0.85em; padding: 0.0625rem 0.3125rem; border-radius: 0.3125rem;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--foreground);
   overflow-wrap: anywhere;
 }
 
-/* Lattice: shared hairlines through 1px gaps */
-.lattice {
-  display: grid; gap: 1px; margin-top: 2.5rem;
-  background: var(--separator);
-  border: 1px solid var(--separator); border-radius: 0.75rem;
-  overflow: hidden;
+/* Tabs */
+.tablist {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem; margin: 2rem auto 0;
 }
-@media (min-width: 640px) { .lattice-2 { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 768px) { .lattice-3 { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 640px) { .lattice-4 { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1024px) { .lattice-4 { grid-template-columns: repeat(4, 1fr); } }
-.cell { background: var(--background); padding: 1.5rem; }
-@media (min-width: 640px) { .cell { padding: 1.75rem; } }
-.index { margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.28em; color: var(--muted); }
-.cell-title { margin: 0.75rem 0 0; font-size: 1rem; font-weight: 500; }
-.cell-body { margin: 0.375rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--separator); border-radius: 0.75rem;
-  padding: 1.5rem;
+.tab {
+  display: inline-flex; align-items: center; gap: 0.5rem; height: 2.5rem; padding: 0 1rem;
+  border: 0; border-radius: 999px; background: transparent; cursor: pointer;
+  font-size: 0.875rem; font-weight: 500; color: var(--muted);
+  transition: color 150ms, background-color 150ms;
 }
-@media (min-width: 640px) { .card { padding: 1.75rem; } }
-.card h3 { margin: 0; font-size: 1rem; font-weight: 500; }
-.card p { margin: 0.375rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--muted); }
+.tab svg { width: 15px; height: 15px; }
+.tab:hover { color: var(--foreground); }
+.tab[aria-selected="true"] { color: var(--foreground); background: var(--card-hover); }
+.tabpanel[hidden] { display: none; }
+.tabpanel.show { animation: rise 450ms var(--ease) both; }
 
-.split { display: grid; gap: 1rem; margin-top: 3rem; }
-@media (min-width: 1024px) { .split { grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: start; } }
+/* Stage: copy + mock */
+.stage { display: grid; gap: 2rem; margin-top: 2.5rem; align-items: center; }
+@media (min-width: 1024px) { .stage { grid-template-columns: 5fr 6fr; gap: 4rem; margin-top: 4rem; } }
+.stage-copy h3 { font-weight: 500; font-size: 1.75rem; line-height: 1.1; letter-spacing: -0.035em; }
+@media (min-width: 640px) { .stage-copy h3 { font-size: 2.25rem; } }
+.stage-copy > p { margin: 0.875rem 0 0; color: var(--muted); font-size: 0.9375rem; line-height: 1.65; text-wrap: pretty; }
+.bullets { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+.bullets li { position: relative; padding-left: 1.125rem; font-size: 0.9375rem; line-height: 1.55; color: var(--muted); }
+.bullets li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 0.3125rem; height: 0.3125rem; border-radius: 999px; background: color-mix(in oklch, var(--foreground) 45%, transparent); }
+.bullets strong { color: var(--foreground); font-weight: 500; }
+.stage.flip .stage-copy { order: 0; }
+@media (min-width: 1024px) { .stage.flip { grid-template-columns: 6fr 5fr; } .stage.flip .stage-copy { order: 2; } }
+.stage > * { min-width: 0; }
+.deep { margin-top: 0; }
+.deep + .deep { margin-top: 5rem; }
+@media (min-width: 1024px) { .deep + .deep { margin-top: 8rem; } }
+.deep .stage { margin-top: 0; }
 
-/* File mock / code */
-.file {
-  background: var(--surface);
-  border: 1px solid var(--separator); border-radius: 0.75rem;
-  overflow: hidden; min-width: 0;
+/* Mock window */
+.win {
+  background: var(--surface); border: 1px solid var(--separator); border-radius: 1rem;
+  overflow: hidden; box-shadow: 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent), 0 24px 60px -30px color-mix(in oklch, var(--foreground) 30%, transparent);
+  transition: border-color 200ms, transform 300ms var(--ease);
 }
+.win:hover { border-color: color-mix(in oklch, var(--foreground) 22%, var(--separator)); }
+.win-bar {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--separator); background: var(--card);
+}
+.dots { display: flex; gap: 0.3125rem; }
+.dots i { width: 0.5625rem; height: 0.5625rem; border-radius: 999px; background: color-mix(in oklch, var(--foreground) 18%, transparent); }
+.win-url {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0.125rem 0.75rem; border-radius: 999px; background: var(--background);
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.win-tag { flex: none; font-size: 11px; color: var(--muted); }
+.win-body { padding: 1rem; min-height: 21rem; display: flex; flex-direction: column; gap: 0.75rem; }
+@media (min-width: 640px) { .win-body { padding: 1.25rem; } }
+.row-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: 0.8125rem; color: var(--muted); }
+.rec {
+  display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.1875rem 0.625rem;
+  border: 1px solid var(--separator); border-radius: 999px; color: var(--foreground); font-size: 0.75rem; font-weight: 500;
+}
+.rec i { width: 0.4375rem; height: 0.4375rem; border-radius: 999px; background: var(--foreground); animation: pulse-dot 1.6s ease-in-out infinite; }
+.rec.idle i { animation: none; opacity: 0.35; }
+.events { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.375rem; align-content: start; flex: 1; min-height: 14.5rem; }
+.events li {
+  display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.75rem; border-radius: 0.625rem;
+  background: var(--card); font-size: 0.8125rem; min-width: 0;
+  transition: background-color 150ms;
+}
+.events li:hover { background: var(--card-hover); }
+.events li.enter { animation: rise 400ms var(--ease) both; }
+.ev-kind { flex: none; width: 4.25rem; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.ev-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-text em { font-style: normal; color: var(--muted); }
+.row-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.mini {
+  display: inline-flex; align-items: center; justify-content: center; height: 1.875rem; padding: 0 0.875rem;
+  border: 1px solid var(--separator); border-radius: 999px; background: transparent;
+  font-size: 0.75rem; font-weight: 500; cursor: pointer;
+  transition: background-color 150ms, opacity 150ms, transform 150ms;
+}
+.mini:hover { background: var(--card-hover); }
+.mini:active { transform: scale(0.97); }
+.mini-solid { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+.mini-solid:hover { background: var(--foreground); opacity: 0.88; }
+.mini-group { display: flex; gap: 0.375rem; }
+.last { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; color: var(--muted); }
+
+.seg { display: inline-flex; padding: 0.1875rem; gap: 0.125rem; border-radius: 999px; background: var(--card); align-self: flex-start; max-width: 100%; }
+.seg button {
+  height: 1.75rem; padding: 0 0.875rem; border: 0; border-radius: 999px; background: transparent;
+  font-size: 0.75rem; font-weight: 500; color: var(--muted); cursor: pointer; transition: background-color 150ms, color 150ms;
+}
+.seg button:hover { color: var(--foreground); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--foreground); box-shadow: 0 0 0 1px var(--separator); }
+
+.fake-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.375rem; }
+.fake-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.625rem 0.75rem;
+  border: 1px solid var(--separator); border-radius: 0.625rem; font-size: 0.875rem;
+  transition: border-color 200ms, background-color 200ms, outline-color 200ms;
+  outline: 2px solid transparent; outline-offset: 2px;
+}
+.fake-list li small { color: var(--muted); font-size: 0.75rem; }
+.fake-list li.pick { outline-color: var(--foreground); background: var(--card); }
+.fake-list li.ghost { outline: 2px dashed var(--foreground); }
+.fake-list li.ghost span { text-decoration: line-through; color: var(--muted); }
+.result {
+  display: flex; align-items: center; gap: 0.625rem; padding: 0.625rem 0.75rem; border-radius: 0.625rem;
+  background: var(--card); font-size: 0.8125rem; min-height: 2.75rem;
+}
+.result b { flex: none; font-weight: 600; }
+.result span { min-width: 0; overflow-wrap: anywhere; }
+
+.field { display: grid; gap: 0.375rem; font-size: 0.75rem; color: var(--muted); }
+.input {
+  display: flex; align-items: center; min-height: 2.5rem; padding: 0 0.75rem; border: 1px solid var(--separator);
+  border-radius: 0.625rem; background: var(--background); font-size: 0.875rem; color: var(--foreground);
+}
+.caret { display: inline-block; width: 1px; height: 1em; margin-left: 1px; background: var(--foreground); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.slug { font-family: var(--mono); font-size: 11px; }
+.saved { display: grid; gap: 0.375rem; list-style: none; margin: 0; padding: 0; }
+.saved li {
+  display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.75rem; border-radius: 0.625rem;
+  background: var(--card); font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere;
+}
+.saved li svg { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.saved.hide li { opacity: 0; transform: translateY(6px); }
+.saved li { transition: opacity 400ms var(--ease), transform 400ms var(--ease); }
+.saved li:nth-child(2) { transition-delay: 120ms; }
+.saved li:nth-child(3) { transition-delay: 240ms; }
+
+/* Code */
+.file { background: var(--surface); border: 1px solid var(--separator); border-radius: 1rem; overflow: hidden; min-width: 0; }
 .file-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-  padding: 0.625rem 1rem;
-  border-bottom: 1px solid var(--separator);
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--separator); background: var(--card);
   font-family: var(--mono); font-size: 11px; color: var(--muted);
 }
 .file-bar span { overflow-wrap: anywhere; }
-.file-tag {
-  flex: none; padding: 0.0625rem 0.5rem;
-  border: 1px solid var(--separator); border-radius: 999px;
-  font-family: var(--sans); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
-}
-pre {
-  margin: 0; padding: 1rem 1.125rem;
-  overflow-x: auto;
-  font-size: 0.8125rem; line-height: 1.7;
-  tab-size: 2;
-}
+pre { margin: 0; padding: 1rem 1.125rem; overflow-x: auto; font-size: 0.8125rem; line-height: 1.7; tab-size: 2; }
 pre code { white-space: pre; }
+.win-body pre { padding: 0; }
 .c { color: var(--muted); }
 .md-h { font-weight: 600; }
 .md-dim { color: var(--muted); }
-
-/* Comparison table */
-.table-wrap {
-  margin-top: 0; overflow-x: auto;
-  border: 1px solid var(--separator); border-radius: 0.75rem;
-  background: var(--surface);
+.copy-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem; border-radius: 999px;
+  border: 1px solid var(--separator); background: transparent; font: 500 11px/1 var(--sans); color: var(--muted); cursor: pointer;
+  transition: color 150ms, background-color 150ms;
 }
-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; min-width: 30rem; }
-caption { text-align: left; padding: 0.875rem 1.125rem; font-size: 11px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--separator); }
-th, td { padding: 0.75rem 1.125rem; text-align: left; vertical-align: top; border-top: 1px solid var(--separator); }
-thead th { border-top: 0; font-weight: 500; font-size: 0.8125rem; }
-tbody th { font-weight: 500; color: var(--muted); width: 18%; }
-td { color: var(--foreground); }
-
+.copy-btn:hover { color: var(--foreground); background: var(--card-hover); }
 .stack { display: grid; gap: 1rem; min-width: 0; }
 
-/* Lists */
-.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-.list li {
-  padding: 1rem 0; border-top: 1px solid var(--separator);
-  font-size: 0.9375rem; line-height: 1.6; color: var(--muted);
+/* Switch */
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem; border-radius: 0.75rem; background: var(--card); }
+.switch-row strong { font-size: 0.875rem; font-weight: 500; display: block; }
+.switch-row small { font-size: 0.75rem; color: var(--muted); }
+.switch {
+  position: relative; flex: none; width: 2.5rem; height: 1.5rem; border-radius: 999px; border: 1px solid var(--separator);
+  background: var(--background); cursor: pointer; padding: 0; transition: background-color 200ms, border-color 200ms;
 }
-.list li:first-child { border-top: 0; padding-top: 0; }
-.list strong { color: var(--foreground); font-weight: 500; }
-.note { margin: 1rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--muted); }
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 1.125rem; height: 1.125rem; border-radius: 999px;
+  background: var(--muted); transition: transform 250ms var(--ease), background-color 200ms;
+}
+.switch[aria-checked="true"] { background: var(--foreground); border-color: var(--foreground); }
+.switch[aria-checked="true"]::after { transform: translateX(1rem); background: var(--background); }
+.hist { flex: 1; min-height: 11rem; border: 1px dashed var(--separator); border-radius: 0.75rem; padding: 0.625rem; overflow: hidden; }
+.hist .events { min-height: 0; }
+.hist-off { display: grid; place-items: center; height: 100%; min-height: 9.5rem; font-size: 0.8125rem; color: var(--muted); }
+.hist .events li { padding: 0.375rem 0.625rem; }
 
-.reset { list-style: none; padding: 0; margin-bottom: 0; }
-.fig { margin: 0; }
-.pills-left { justify-content: flex-start; margin-top: 1.5rem; }
+/* Redaction mock */
+.kv { display: grid; gap: 0.375rem; }
+.kv-row {
+  display: grid; grid-template-columns: 7rem 1fr; gap: 0.75rem; align-items: center; padding: 0.625rem 0.75rem;
+  border-radius: 0.625rem; background: var(--card); font-size: 0.8125rem; min-width: 0;
+}
+.kv-row dt { color: var(--muted); }
+.kv-row dd { margin: 0; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; transition: opacity 250ms; }
+.kv-row dd.swap { opacity: 0; }
+.mask { background: color-mix(in oklch, var(--foreground) 12%, transparent); border-radius: 0.25rem; padding: 0 0.3125rem; }
+
+/* Grid of small features */
+.grid { display: grid; gap: 0.75rem; margin-top: 3rem; }
+@media (min-width: 640px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+.card {
+  background: var(--card); border: 1px solid transparent; border-radius: 1rem; padding: 1.25rem 1.25rem 1.5rem;
+  transition: background-color 200ms, border-color 200ms, transform 300ms var(--ease);
+}
+@media (min-width: 640px) { .card { padding: 1.5rem; } }
+.card:hover { background: var(--card-hover); border-color: var(--separator); transform: translateY(-2px); }
+.card svg { width: 18px; height: 18px; color: var(--muted); transition: color 200ms; }
+.card:hover svg { color: var(--foreground); }
+.card h3 { margin: 1.25rem 0 0; font-size: 0.9375rem; font-weight: 500; letter-spacing: -0.005em; }
+.card p { margin: 0.375rem 0 0; font-size: 0.875rem; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+
+/* Table */
+.table-wrap { margin-top: 3rem; overflow-x: auto; border: 1px solid var(--separator); border-radius: 1rem; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; min-width: 32rem; }
+th, td { padding: 0.75rem 1.125rem; text-align: left; vertical-align: top; border-top: 1px solid var(--separator); }
+thead th { border-top: 0; font-weight: 500; background: var(--card); }
+tbody th { font-weight: 500; color: var(--muted); width: 16%; }
+.note { margin: 1.25rem 0 0; font-size: 0.8125rem; line-height: 1.6; color: var(--muted); }
 
 /* Setup */
-.steps { display: grid; gap: 1.25rem; margin-top: 2.5rem; counter-reset: step; }
+.steps { display: grid; gap: 1.25rem; margin-top: 2rem; }
 @media (min-width: 1024px) { .steps { grid-template-columns: repeat(3, 1fr); } }
 .step { display: grid; gap: 0.75rem; align-content: start; min-width: 0; }
 .step-label { margin: 0; font-size: 0.875rem; color: var(--muted); }
 .step-label strong { color: var(--foreground); font-weight: 500; }
-.copy-btn {
-  flex: none; display: inline-flex; align-items: center; gap: 0.375rem;
-  padding: 0.25rem 0.5rem; border-radius: 0.375rem;
-  border: 1px solid var(--separator); background: transparent;
-  font: 500 11px/1 var(--sans); color: var(--muted); cursor: pointer;
+
+/* Closing CTA */
+.cta-card {
+  position: relative; overflow: hidden; border: 1px solid var(--separator); border-radius: 1.5rem;
+  padding: 3.5rem 1.25rem; text-align: center;
 }
-.copy-btn:hover { color: var(--foreground); }
+@media (min-width: 640px) { .cta-card { padding: 6rem 2rem; border-radius: 2rem; } }
+.cta-card .inner { position: relative; z-index: 1; max-width: 40rem; margin: 0 auto; }
+.cta-card .scrim { background: radial-gradient(ellipse 70% 70% at 50% 50%, var(--background) 0%, color-mix(in oklch, var(--background) 70%, transparent) 50%, transparent 85%); }
+.cta-card h2 { font-size: 2.5rem; }
+@media (min-width: 640px) { .cta-card h2 { font-size: 3.75rem; } }
+.cta-card .intro { margin-left: auto; margin-right: auto; }
 
 /* Footer */
-.footer { border-top: 1px solid var(--separator); }
-.footer .shell {
-  display: flex; flex-direction: column; gap: 1.5rem;
-  padding-top: 2.5rem; padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+.footer { border-top: 1px solid var(--separator); padding: 3.5rem 0 0; }
+.footer-grid { display: grid; gap: 2.5rem; }
+@media (min-width: 1024px) { .footer-grid { grid-template-columns: 1fr auto auto; gap: 5rem; } }
+.footer-brand p { margin: 0.75rem 0 0; max-width: 22rem; font-size: 0.875rem; line-height: 1.6; color: var(--muted); }
+.socials { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
+.socials a {
+  display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border-radius: 999px;
+  color: var(--muted); transition: color 150ms, background-color 150ms;
 }
-@media (min-width: 640px) { .footer .shell { flex-direction: row; align-items: center; justify-content: space-between; } }
-.footer p { margin: 0.75rem 0 0; max-width: 24rem; font-size: 0.75rem; line-height: 1.6; color: var(--muted); }
-.footer nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
-.footer nav a { font-size: 0.875rem; color: var(--muted); text-decoration: none; padding: 0.25rem 0; }
-.footer nav a:hover { color: var(--foreground); }
+.socials a:hover { color: var(--foreground); background: var(--card-hover); }
+.socials svg { width: 17px; height: 17px; }
+.footer-cols { display: flex; gap: 3rem; }
+@media (min-width: 1024px) { .footer-cols { display: contents; } }
+.footer-cols > div { min-width: 7rem; }
+.footer h4 { margin: 0 0 0.875rem; font-size: 0.8125rem; font-weight: 500; }
+.footer-cols a { display: block; padding: 0.25rem 0; font-size: 0.875rem; color: var(--muted); text-decoration: none; transition: color 150ms; }
+.footer-cols a:hover { color: var(--foreground); }
+.footer-legal {
+  display: flex; flex-direction: column; gap: 0.5rem; margin-top: 3rem; padding: 1.25rem 0 max(1.25rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--separator); font-size: 0.75rem; color: var(--muted);
+}
+@media (min-width: 640px) { .footer-legal { flex-direction: row; justify-content: space-between; } }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  *, *::before, *::after {
-    animation: none !important;
-    transition: none !important;
-  }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .js .reveal { opacity: 1; transform: none; }
 }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-gh" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.42-2.7 5.4-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></symbol>
+    <symbol id="i-npm" viewBox="0 0 24 24"><path fill="currentColor" d="M2 7v10h10v2h5v-2h5V7H2Zm2 2h8v6h-2V11H8v4H4V9Zm10 0h6v6h-2v-4h-2v4h-2V9Z" fill-rule="evenodd"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></g></symbol>
+    <symbol id="i-rec" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></g></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></g></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></g></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/></g></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.5 3 8 7.5 9.5 4.5-1.5 7.5-5 7.5-9.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/></g></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7 12h10"/></g></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 10 3 2-3 2M13 15h4"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></g></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></g></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></g></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></g></symbol>
+  </defs>
+</svg>
+
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="nav">
+<header class="nav" id="nav">
   <div class="shell">
     <a class="wordmark" href="#top" aria-label="flowtape home"><span class="wordmark-mark" aria-hidden="true"></span>flowtape</a>
-    <nav class="nav-links" aria-label="External">
-      <a href="https://github.com/vvedantb/flowtape" rel="noreferrer">GitHub</a>
-      <a href="https://www.npmjs.com/package/@vvedantb/flowtape" rel="noreferrer">npm</a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#demo">See it work</a>
+      <a href="#features">Features</a>
+      <a href="#more">Everything else</a>
+      <a href="#setup">Setup</a>
     </nav>
+    <div class="nav-ext">
+      <a class="link" href="https://www.npmjs.com/package/@vvedantb/flowtape" rel="noreferrer">npm</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/vvedantb/flowtape" rel="noreferrer"><svg class="icon" aria-hidden="true"><use href="#i-gh"/></svg>GitHub</a>
+      <button class="menu-btn" type="button" id="menu-btn" aria-expanded="false" aria-controls="mobile-menu" aria-label="Menu">
+        <svg class="bars" aria-hidden="true"><use href="#i-menu"/></svg>
+        <svg class="x" aria-hidden="true"><use href="#i-x"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobile-menu">
+    <div class="shell">
+      <a href="#demo">See it work</a>
+      <a href="#features">Features</a>
+      <a href="#more">Everything else</a>
+      <a href="#setup">Setup</a>
+      <a href="https://www.npmjs.com/package/@vvedantb/flowtape" rel="noreferrer">npm</a>
+    </div>
   </div>
 </header>
 
@@ -404,62 +560,140 @@ td { color: var(--foreground); }
     <div class="scrim" aria-hidden="true"></div>
     <div class="shell hero">
       <div class="hero-inner">
-        <p class="badge rise"><span class="pulse-dot" aria-hidden="true"></span>Flow recorder for Vite + React</p>
-        <h1 id="hero-title" class="rise rise-1">Record a flow. Replay it with <em>an agent.</em></h1>
-        <p class="lede rise rise-2">A small dev-only overlay for your Vite + React app. Click Record, use the app, then export the journey as JSON and a Claude Code prompt you can commit and replay in a real browser.</p>
+        <p class="badge rise"><span class="pulse-dot" aria-hidden="true"></span>No account. No cloud. No extension.</p>
+        <h1 id="hero-title" class="rise rise-1">Record a flow. Replay it with an agent.</h1>
+        <p class="lede rise rise-2">A dev-only overlay for Vite + React and Next.js. Click Record, use your app, export a Claude Code prompt.</p>
         <div class="cta rise rise-3">
-          <a class="btn btn-primary" href="https://github.com/vvedantb/flowtape" rel="noreferrer">View on GitHub</a>
+          <a class="btn btn-primary" href="https://github.com/vvedantb/flowtape" rel="noreferrer">View on GitHub <svg class="icon arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
           <button class="btn btn-outline" type="button" data-copy="npm install -D @vvedantb/flowtape" aria-label="Copy install command: npm install -D @vvedantb/flowtape">
             <span class="cmd"><span class="prompt" aria-hidden="true">$ </span>npm install -D @vvedantb/flowtape</span>
-            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+            <svg class="icon copy-icon" aria-hidden="true"><use href="#i-copy"/></svg>
           </button>
         </div>
         <ul class="pills rise rise-4" aria-label="Capabilities">
-          <li class="pill">record</li>
-          <li class="pill">export</li>
-          <li class="pill">prompts/&lt;slug&gt;.md</li>
-          <li class="pill">session history</li>
-          <li class="pill">redaction</li>
-          <li class="pill">local-first</li>
+          <li class="pill"><svg aria-hidden="true"><use href="#i-rec"/></svg>Record</li>
+          <li class="pill"><svg aria-hidden="true"><use href="#i-file"/></svg>Export prompts</li>
+          <li class="pill"><svg aria-hidden="true"><use href="#i-layers"/></svg>Vite + Next.js</li>
+          <li class="pill"><svg aria-hidden="true"><use href="#i-clock"/></svg>Session history</li>
+          <li class="pill"><svg aria-hidden="true"><use href="#i-shield"/></svg>Redaction</li>
+          <li class="pill"><svg aria-hidden="true"><use href="#i-lock"/></svg>Local-first</li>
         </ul>
+        <p class="hint rise rise-5">Dev only. The overlay does not render in production builds.</p>
       </div>
     </div>
   </section>
 
-  <section id="how" class="section" aria-labelledby="how-title">
+  <section id="demo" class="section" aria-labelledby="demo-title">
     <div class="shell">
-      <div class="heading">
-        <p class="eyebrow">How it works</p>
-        <h2 id="how-title">Record, export, then <em>replay</em></h2>
-        <p class="intro">flowtape records the journey inside your running app. There is no browser extension and nothing to script by hand.</p>
+      <div class="heading center reveal">
+        <h2 id="demo-title">See it work</h2>
+        <p class="intro">The overlay, in four steps. Click anything.</p>
       </div>
 
-      <ol class="lattice lattice-4 reset">
-        <li class="cell">
-          <p class="index">01</p>
-          <p class="cell-title">Record</p>
-          <p class="cell-body">Click Record in the overlay. flowtape logs the current page, then every click, field value, form submit and client-side navigation.</p>
-        </li>
-        <li class="cell">
-          <p class="index">02</p>
-          <p class="cell-title">Stop and name</p>
-          <p class="cell-body">Click Stop and type a name, such as <code>Login and add note</code>. The name becomes the file slug.</p>
-        </li>
-        <li class="cell">
-          <p class="index">03</p>
-          <p class="cell-title">Export</p>
-          <p class="cell-body">flowtape writes <code>flows/&lt;slug&gt;.json</code>, a FlowDocument validated with Zod, and <code>prompts/&lt;slug&gt;.md</code>, a Claude Code prompt.</p>
-        </li>
-        <li class="cell">
-          <p class="index">04</p>
-          <p class="cell-title">Replay with Claude Code</p>
-          <p class="cell-body">Start your dev server, give Claude Code a browser tool such as Playwright MCP, and hand it the prompt.</p>
-        </li>
-      </ol>
+      <div class="tabs" data-tabs>
+        <div class="tablist reveal" role="tablist" aria-label="Demo steps">
+          <button class="tab" role="tab" id="t-record" aria-controls="p-record" aria-selected="true"><svg aria-hidden="true"><use href="#i-rec"/></svg>Record</button>
+          <button class="tab" role="tab" id="t-assert" aria-controls="p-assert" aria-selected="false" tabindex="-1"><svg aria-hidden="true"><use href="#i-check"/></svg>Assert</button>
+          <button class="tab" role="tab" id="t-export" aria-controls="p-export" aria-selected="false" tabindex="-1"><svg aria-hidden="true"><use href="#i-file"/></svg>Export</button>
+          <button class="tab" role="tab" id="t-prompt" aria-controls="p-prompt" aria-selected="false" tabindex="-1"><svg aria-hidden="true"><use href="#i-term"/></svg>Prompt</button>
+        </div>
 
-      <div class="split">
-        <figure class="file fig">
-          <div class="file-bar"><span>.flowtape/prompts/login-and-add-note.md</span><span class="file-tag">Excerpt</span></div>
+        <div class="tabpanel reveal" role="tabpanel" id="p-record" aria-labelledby="t-record" data-panel="record">
+          <div class="stage">
+            <div class="stage-copy">
+              <h3>Click Record. Use the app.</h3>
+              <p>flowtape logs the current page, then every click, field value, form submit and client-side navigation.</p>
+              <ul class="bullets">
+                <li>Clicks inside the overlay are ignored.</li>
+                <li>Typing is debounced. Each field records its final value once.</li>
+                <li>The recording survives reloads in the same tab.</li>
+              </ul>
+            </div>
+            <div class="win" aria-label="Mock of the flowtape overlay while recording">
+              <div class="win-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="win-url">localhost:5173</span><span class="win-tag">flowtape</span></div>
+              <div class="win-body">
+                <div class="row-head"><span class="rec"><i></i>Recording</span><span><span id="rec-count">0</span> events</span></div>
+                <ol class="events" id="rec-events" aria-live="off"></ol>
+                <div class="row-foot"><span class="last" id="rec-last">Last: none yet</span><span class="mini-group"><button class="mini" type="button" id="rec-replay">Run again</button><span class="mini mini-solid" aria-hidden="true">Stop</span></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabpanel" role="tabpanel" id="p-assert" aria-labelledby="t-assert" data-panel="assert" hidden>
+          <div class="stage">
+            <div class="stage-copy">
+              <h3>Check what should be true.</h3>
+              <p>While you record, click Assert, choose a check, then click an element. The app never receives that click.</p>
+              <ul class="bullets">
+                <li><strong>Text:</strong> the element is visible and shows its current text.</li>
+                <li><strong>Count:</strong> how many elements match one of the rows.</li>
+                <li><strong>Gone:</strong> the element leaves the page after the next action.</li>
+                <li>Esc or Cancel stops picking.</li>
+              </ul>
+            </div>
+            <div class="win" aria-label="Mock of the Assert picker">
+              <div class="win-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="win-url">localhost:5173/notes</span><span class="win-tag">flowtape</span></div>
+              <div class="win-body">
+                <div class="seg" role="group" aria-label="Check type">
+                  <button type="button" data-check="text" aria-pressed="true">Text</button>
+                  <button type="button" data-check="count" aria-pressed="false">Count</button>
+                  <button type="button" data-check="gone" aria-pressed="false">Gone</button>
+                </div>
+                <ul class="fake-list" id="assert-list">
+                  <li class="pick"><span>Water the plants</span><small>note-item</small></li>
+                  <li><span>Book the dentist</span><small>note-item</small></li>
+                  <li><span>Reply to Sam</span><small>note-item</small></li>
+                </ul>
+                <div class="result" aria-live="polite"><b>Check:</b><span id="assert-result"></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabpanel" role="tabpanel" id="p-export" aria-labelledby="t-export" data-panel="export" hidden>
+          <div class="stage">
+            <div class="stage-copy">
+              <h3>Stop, name, export.</h3>
+              <p>The name becomes the file slug. Export writes the flow as JSON, a Markdown prompt and a draft e2e test.</p>
+              <ul class="bullets">
+                <li>Flows and prompts are meant to be committed.</li>
+                <li>Exporting under the same name overwrites the files.</li>
+                <li>The overlay shows the saved path and a Copy prompt button.</li>
+              </ul>
+            </div>
+            <div class="win" aria-label="Mock of the export step">
+              <div class="win-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="win-url">localhost:5173</span><span class="win-tag">flowtape</span></div>
+              <div class="win-body">
+                <div class="row-head"><span class="rec idle"><i></i>Stopped</span><span>7 events</span></div>
+                <div class="field">Name
+                  <div class="input"><span id="exp-name"></span><span class="caret" aria-hidden="true"></span></div>
+                  <span class="slug">slug: <span id="exp-slug">login-and-add-note</span></span>
+                </div>
+                <ul class="saved hide" id="exp-saved">
+                  <li><svg aria-hidden="true"><use href="#i-file"/></svg>.flowtape/flows/login-and-add-note.json</li>
+                  <li><svg aria-hidden="true"><use href="#i-file"/></svg>.flowtape/prompts/login-and-add-note.md</li>
+                  <li><svg aria-hidden="true"><use href="#i-file"/></svg>.flowtape/e2e/login-and-add-note.e2e.ts</li>
+                </ul>
+                <div class="row-foot"><span class="last">Saved to .flowtape/</span><span class="mini-group"><button class="mini" type="button" data-copy="Follow @.flowtape/prompts/login-and-add-note.md against the running app" id="exp-copy">Copy prompt</button><button class="mini mini-solid" type="button" id="exp-go">Export</button></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabpanel" role="tabpanel" id="p-prompt" aria-labelledby="t-prompt" data-panel="prompt" hidden>
+          <div class="stage">
+            <div class="stage-copy">
+              <h3>A prompt Claude Code can follow.</h3>
+              <p>Each prompt has seven sections. Assertions and fuzz hints are heuristics, so fill in the <code class="i">TODO</code> lines before you rely on them.</p>
+              <ul class="bullets">
+                <li>Redacted fields name an environment variable.</li>
+                <li>The agent is told never to print, log or screenshot it.</li>
+              </ul>
+            </div>
+            <div class="win" aria-label="Excerpt of a generated prompt">
+              <div class="win-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="win-url">.flowtape/prompts/login-and-add-note.md</span><span class="win-tag">Excerpt</span></div>
+              <div class="win-body">
 <pre><code><span class="md-h"># Flow: Login and add note</span>
 
 <span class="md-h">## Goal</span>
@@ -479,20 +713,30 @@ and confirm each step works as recorded.</span>
 <span class="md-h">## Fuzz hints</span>
 <span class="md-h">## Out of bounds</span>
 <span class="md-h">## Report back</span></code></pre>
-          <figcaption class="sr-only">Excerpt from the sample prompt committed in the flowtape demo app.</figcaption>
-        </figure>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-        <div class="stack">
-          <div class="card">
-            <h3>Commit flows and prompts</h3>
-            <p>Flows and prompts are meant to be committed. They act as living, reviewable test journeys. Export under the same name to overwrite them.</p>
+  <section id="features" class="section section-tight" aria-label="Features">
+    <div class="shell">
+      <div class="deep">
+        <div class="stage flip">
+          <div class="stage-copy reveal">
+            <p class="eyebrow">Claude Code</p>
+            <h2>Hand the journey to an agent</h2>
+            <p>Start your dev server and give Claude Code a browser tool, for example Playwright MCP. Then point it at the prompt.</p>
+            <ul class="bullets">
+              <li>Interactive, or headless with <code>claude -p</code>.</li>
+              <li>Set <code>$FLOWTAPE_PASSWORD</code> to a <strong>test</strong> credential in that shell.</li>
+              <li>Every export also writes a draft test for the e2e runner.</li>
+            </ul>
           </div>
-          <div class="card">
-            <h3>Fill in the TODOs</h3>
-            <p>Assertions and fuzz hints are heuristics. Fill in the <code>TODO</code> lines, such as seed data and final-state checks, before you rely on them.</p>
-          </div>
-          <div class="file">
-            <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy='claude "Follow @.flowtape/prompts/login-and-add-note.md against the running app"' aria-label="Copy replay command">Copy</button></div>
+          <div class="file reveal" style="--d:120ms">
+            <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy='claude "Follow @.flowtape/prompts/login-and-add-note.md against the running app"' aria-label="Copy interactive command">Copy</button></div>
 <pre><code><span class="c"># Interactive</span>
 claude "Follow @.flowtape/prompts/login-and-add-note.md against the running app"
 
@@ -501,137 +745,131 @@ claude -p "$(cat .flowtape/prompts/login-and-add-note.md)"</code></pre>
           </div>
         </div>
       </div>
-    </div>
-  </section>
 
-  <section id="history" class="section" aria-labelledby="history-title">
-    <div class="shell">
-      <div class="heading">
-        <p class="eyebrow">Session history</p>
-        <h2 id="history-title">A quiet log of <em>what you did</em></h2>
-        <p class="intro">In development, flowtape keeps an always-on, redacted log for each browser tab. It records navigations, clicks, field values (type-only for masked fields), form submits, and uncaught errors and unhandled rejections. Error lines keep a scrubbed message, never a stack.</p>
-      </div>
-
-      <div class="split">
-        <div class="stack">
-          <div class="table-wrap">
-            <table>
-              <caption>Record flow vs session history</caption>
-              <thead>
-                <tr><td></td><th scope="col">Record flow</th><th scope="col">Session history</th></tr>
-              </thead>
-              <tbody>
-                <tr><th scope="row">Starts</th><td>When you click Record</td><td>Automatically in development</td></tr>
-                <tr><th scope="row">Ends</th><td>When you click Stop</td><td>When you switch it off or close the tab</td></tr>
-                <tr><th scope="row">Output</th><td><code>flows/&lt;slug&gt;.json</code> and <code>prompts/&lt;slug&gt;.md</code></td><td><code>history/&lt;date&gt;-&lt;sessionId&gt;.jsonl</code></td></tr>
-                <tr><th scope="row">Git</th><td>Committed</td><td>Ignored</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="file">
-            <div class="file-bar"><span>.gitignore</span></div>
-<pre><code>**/.flowtape/history/</code></pre>
-          </div>
-        </div>
-
-        <div class="stack">
-          <div class="card">
-            <h3>Toggle it in the overlay</h3>
-            <p>Use the Session history switch at the bottom of the overlay. While it is on, the overlay shows the session id, event count and file path. The choice survives reloads.</p>
-          </div>
-          <div class="card">
-            <h3>One file per tab</h3>
-            <p>Reloading appends to the same file. A new tab starts a new one. History is never turned into a named flow; use Record for that.</p>
-          </div>
-          <div class="file">
-            <div class="file-bar"><span>Terminal</span></div>
-<pre><code><span class="c"># Ask Claude Code to review it</span>
-claude "Read the latest files in .flowtape/history/ and summarise what I did in the app and any errors I hit"
-
-<span class="c"># List history files, newest first</span>
-npx @vvedantb/flowtape history</code></pre>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="redaction" class="section" aria-labelledby="redaction-title">
-    <div class="shell">
-      <div class="heading">
-        <p class="eyebrow">Redaction and local-first</p>
-        <h2 id="redaction-title">Secrets are scrubbed <em>three times</em></h2>
-        <p class="intro">Redaction runs in the browser as events are recorded, on the server before files are written, and over the final Markdown. Session history gets the first two.</p>
-      </div>
-
-      <ol class="lattice lattice-3 reset">
-        <li class="cell">
-          <p class="index">01</p>
-          <p class="cell-title">In the browser</p>
-          <p class="cell-body">Values are redacted as each event is captured, before anything leaves the page.</p>
-        </li>
-        <li class="cell">
-          <p class="index">02</p>
-          <p class="cell-title">On the server</p>
-          <p class="cell-body">The dev middleware validates and redacts again before it writes a flow or appends to history.</p>
-        </li>
-        <li class="cell">
-          <p class="index">03</p>
-          <p class="cell-title">Over the prompt</p>
-          <p class="cell-body">The final Markdown is scrubbed once more before it is saved.</p>
-        </li>
-      </ol>
-
-      <div class="split">
-        <div class="card">
-          <ul class="list">
-            <li><strong>Password fields</strong> never store a value. The event keeps only that it was redacted and the value's length.</li>
-            <li><strong><code>data-flowtape-mask</code></strong> on a field or any ancestor records every field inside type-only.</li>
-            <li><strong>Secret-looking field names</strong>, such as token, API key, OTP or card number, are masked automatically.</li>
-            <li><strong>Pattern scrub</strong> replaces secret shapes in every stored string, such as bearer tokens, JWTs, API keys and PEM private keys, with <code>[REDACTED]</code>.</li>
-          </ul>
-          <p class="note">The pattern scrub is a safety net, not a guarantee. Mask sensitive fields explicitly and review a flow before you commit it.</p>
-        </div>
-        <div class="stack">
-          <div class="card">
-            <h3>Test credentials, by name</h3>
-            <p>Redacted fields name an environment variable, such as <code>$FLOWTAPE_PASSWORD</code>. Set it to a test credential in the shell that runs Claude Code. The prompt tells the agent never to print, log or screenshot it.</p>
-          </div>
-          <div class="card">
-            <h3>Everything stays on your machine</h3>
-            <p>The middleware serves <code>/__flowtape/*</code> during <code>vite dev</code> only. The overlay renders only outside production builds.</p>
-            <ul class="pills pills-left" aria-label="What flowtape does not use">
-              <li class="pill">no account</li>
-              <li class="pill">no cloud</li>
-              <li class="pill">no extension</li>
-              <li class="pill">no network capture</li>
+      <div class="deep">
+        <div class="stage">
+          <div class="stage-copy reveal">
+            <p class="eyebrow">Session history</p>
+            <h2>A log of what you did. Off until you switch it on.</h2>
+            <p>One JSONL file per browser tab, appended every second. Never turned into a named flow. Use Record for that.</p>
+            <ul class="bullets">
+              <li>Navigations, clicks, field values, form submits and uncaught errors.</li>
+              <li>Errors keep a scrubbed message, file, line and column. No stack.</li>
+              <li>No network capture: no request bodies, cookies or <code>Authorization</code> headers.</li>
+              <li>Gitignored: <code>**/.flowtape/history/</code></li>
             </ul>
           </div>
+          <div class="win reveal" style="--d:120ms" aria-label="Illustration of the session history switch">
+            <div class="win-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="win-url">.flowtape/history/&lt;date&gt;-&lt;sessionId&gt;.jsonl</span><span class="win-tag">Illustration</span></div>
+            <div class="win-body">
+              <div class="switch-row">
+                <div><strong id="hist-label">Session history</strong><small id="hist-sub">Off</small></div>
+                <button class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="hist-label" id="hist-switch"></button>
+              </div>
+              <div class="hist" id="hist-box" aria-live="off"></div>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap reveal">
+          <table>
+            <thead><tr><td style="border:0;background:var(--card)"></td><th scope="col">Record flow</th><th scope="col">Session history</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Starts</th><td>When you click Record</td><td>When you switch it on (off by default)</td></tr>
+              <tr><th scope="row">Ends</th><td>When you click Stop</td><td>When you switch it off or close the tab</td></tr>
+              <tr><th scope="row">Output</th><td><code>flows/&lt;slug&gt;.json</code> and <code>prompts/&lt;slug&gt;.md</code></td><td><code>history/&lt;date&gt;-&lt;sessionId&gt;.jsonl</code></td></tr>
+              <tr><th scope="row">Git</th><td>Committed</td><td>Ignored</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note reveal">Review it with an agent: <code>claude "Read the latest files in .flowtape/history/ and summarise what I did in the app and any errors I hit"</code>. List files with <code>npx @vvedantb/flowtape history</code>.</p>
+      </div>
+
+      <div class="deep">
+        <div class="stage flip">
+          <div class="stage-copy reveal">
+            <p class="eyebrow">Redaction and local-first</p>
+            <h2>Redacted before it is stored</h2>
+            <p>Redaction runs in the browser, on the server before files are written, and over the final Markdown. Session history gets the first two.</p>
+            <ul class="bullets">
+              <li><strong>Password fields</strong> never store a value, only its length.</li>
+              <li><strong><code>data-flowtape-mask</code></strong> records every field inside type-only.</li>
+              <li><strong>Allowlist mode</strong> for apps that handle personal data.</li>
+              <li><strong>Pattern scrub</strong> covers tokens, JWTs, NHS numbers, emails, UK postcodes and mobiles.</li>
+            </ul>
+            <ul class="pills pills-left" aria-label="What flowtape does not use">
+              <li class="pill">No account</li>
+              <li class="pill">No cloud</li>
+              <li class="pill">No extension</li>
+              <li class="pill">No network capture</li>
+            </ul>
+            <p class="note">The pattern scrub is a safety net, not a guarantee. Review a flow before you commit it.</p>
+          </div>
+          <div class="win reveal" style="--d:120ms" aria-label="Illustration of raw and stored values">
+            <div class="win-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="win-url">What you typed vs what is stored</span><span class="win-tag">Illustration</span></div>
+            <div class="win-body">
+              <div class="seg" role="group" aria-label="View">
+                <button type="button" data-view="raw" aria-pressed="false">Typed</button>
+                <button type="button" data-view="stored" aria-pressed="true">Stored</button>
+              </div>
+              <dl class="kv" id="kv">
+                <div class="kv-row"><dt>Password</dt><dd data-raw="correct-horse-battery" data-stored="redacted: true, value: null, length: 21"></dd></div>
+                <div class="kv-row"><dt>Email</dt><dd data-raw="jane.doe@company.co.uk" data-stored="[REDACTED]"></dd></div>
+                <div class="kv-row"><dt>API key</dt><dd data-raw="api_key_looks_like_this_example_000" data-stored="[REDACTED]"></dd></div>
+                <div class="kv-row"><dt>Postcode</dt><dd data-raw="SW1A 1AA" data-stored="[REDACTED]"></dd></div>
+                <div class="kv-row"><dt>Test email</dt><dd data-raw="ada@example.test" data-stored="ada@example.test"></dd></div>
+              </dl>
+              <p class="note" style="margin:0">Reserved example domains such as <code>*.test</code> are kept, so test accounts replay.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="setup" class="section" aria-labelledby="setup-title">
+  <section id="more" class="section" aria-labelledby="more-title">
     <div class="shell">
-      <div class="heading">
-        <p class="eyebrow">Setup</p>
-        <h2 id="setup-title">Three steps into <em>any Vite app</em></h2>
-        <p class="intro">To keep the overlay out of your production bundle entirely, render it behind <code>import.meta.env.DEV</code>.</p>
+      <div class="heading reveal">
+        <h2 id="more-title">Everything else</h2>
+        <p class="intro">Small facts from the README.</p>
       </div>
+      <div class="grid">
+        <div class="card reveal"><svg aria-hidden="true"><use href="#i-layers"/></svg><h3>Vite and Next.js</h3><p>A Vite plugin, or route handlers for the Next.js App and Pages Routers.</p></div>
+        <div class="card reveal" style="--d:60ms"><svg aria-hidden="true"><use href="#i-check"/></svg><h3>Assertions</h3><p>Text, Count and Gone checks become <strong>Check:</strong> steps in the prompt.</p></div>
+        <div class="card reveal" style="--d:120ms"><svg aria-hidden="true"><use href="#i-code"/></svg><h3>e2e export</h3><p>A draft test for the e2e runner. Exact steps, no model, no API key.</p></div>
+        <div class="card reveal" style="--d:180ms"><svg aria-hidden="true"><use href="#i-play"/></svg><h3>Replay scripts</h3><p>Record and replay from the CLI with Playwright, an optional peer dependency.</p></div>
+        <div class="card reveal"><svg aria-hidden="true"><use href="#i-refresh"/></svg><h3>Survives reloads</h3><p>Redacted events live in <code>sessionStorage</code> until the tab closes or you click Clear.</p></div>
+        <div class="card reveal" style="--d:60ms"><svg aria-hidden="true"><use href="#i-shield"/></svg><h3>Allowlist mode</h3><p><code>data-flowtape-allowlist</code> records fields type-only and drops element text.</p></div>
+        <div class="card reveal" style="--d:120ms"><svg aria-hidden="true"><use href="#i-scan"/></svg><h3>Audit</h3><p><code>flowtape audit</code> scans saved files for anything that still looks sensitive.</p></div>
+        <div class="card reveal" style="--d:180ms"><svg aria-hidden="true"><use href="#i-term"/></svg><h3>Dev only</h3><p>The middleware runs under <code>vite dev</code> or <code>next dev</code>. The overlay is off in production.</p></div>
+      </div>
+    </div>
+  </section>
 
-      <div class="steps">
-        <div class="step">
-          <p class="step-label"><strong>1.</strong> Install the package.</p>
-          <div class="file">
-            <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy="npm install -D @vvedantb/flowtape" aria-label="Copy install command">Copy</button></div>
-<pre><code>npm install -D @vvedantb/flowtape</code></pre>
-          </div>
+  <section id="setup" class="section section-tight" aria-labelledby="setup-title">
+    <div class="shell">
+      <div class="heading center reveal">
+        <h2 id="setup-title">Add it to your app</h2>
+        <p class="intro">Render the overlay behind <code>import.meta.env.DEV</code> to keep it out of the production bundle.</p>
+      </div>
+      <div class="tabs" data-tabs>
+        <div class="tablist reveal" role="tablist" aria-label="Framework">
+          <button class="tab" role="tab" id="t-vite" aria-controls="p-vite" aria-selected="true">Vite + React</button>
+          <button class="tab" role="tab" id="t-next" aria-controls="p-next" aria-selected="false" tabindex="-1">Next.js</button>
         </div>
-        <div class="step">
-          <p class="step-label"><strong>2.</strong> Add the plugin.</p>
-          <div class="file">
-            <div class="file-bar"><span>vite.config.ts</span></div>
+
+        <div class="tabpanel" role="tabpanel" id="p-vite" aria-labelledby="t-vite" data-panel="vite">
+          <div class="steps">
+            <div class="step reveal">
+              <p class="step-label"><strong>1.</strong> Install the package.</p>
+              <div class="file">
+                <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy="npm install -D @vvedantb/flowtape" aria-label="Copy install command">Copy</button></div>
+<pre><code>npm install -D @vvedantb/flowtape</code></pre>
+              </div>
+            </div>
+            <div class="step reveal" style="--d:80ms">
+              <p class="step-label"><strong>2.</strong> Add the plugin.</p>
+              <div class="file">
+                <div class="file-bar"><span>vite.config.ts</span></div>
 <pre><code>import react from '@vitejs/plugin-react';
 import { flowtape } from '@vvedantb/flowtape/vite';
 import { defineConfig } from 'vite';
@@ -639,12 +877,12 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [flowtape(), react()],
 });</code></pre>
-          </div>
-        </div>
-        <div class="step">
-          <p class="step-label"><strong>3.</strong> Mount the overlay once.</p>
-          <div class="file">
-            <div class="file-bar"><span>main.tsx</span></div>
+              </div>
+            </div>
+            <div class="step reveal" style="--d:160ms">
+              <p class="step-label"><strong>3.</strong> Mount the overlay once.</p>
+              <div class="file">
+                <div class="file-bar"><span>main.tsx</span></div>
 <pre><code>import { FlowtapeOverlay } from '@vvedantb/flowtape';
 
 createRoot(root).render(
@@ -653,6 +891,67 @@ createRoot(root).render(
     &lt;FlowtapeOverlay /&gt;
   &lt;/&gt;,
 );</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabpanel" role="tabpanel" id="p-next" aria-labelledby="t-next" data-panel="next" hidden>
+          <div class="steps">
+            <div class="step">
+              <p class="step-label"><strong>1.</strong> Install the package.</p>
+              <div class="file">
+                <div class="file-bar"><span>Terminal</span><button class="copy-btn" type="button" data-copy="npm install -D @vvedantb/flowtape" aria-label="Copy install command">Copy</button></div>
+<pre><code>npm install -D @vvedantb/flowtape</code></pre>
+              </div>
+            </div>
+            <div class="step">
+              <p class="step-label"><strong>2.</strong> Add the route (App Router).</p>
+              <div class="file">
+                <div class="file-bar"><span>app/api/flowtape/[...path]/route.ts</span></div>
+<pre><code>import { flowtapeRouteHandlers } from '@vvedantb/flowtape/next';
+
+export const { GET, POST } = flowtapeRouteHandlers();</code></pre>
+              </div>
+            </div>
+            <div class="step">
+              <p class="step-label"><strong>3.</strong> Render the overlay in the layout.</p>
+              <div class="file">
+                <div class="file-bar"><span>app/layout.tsx</span></div>
+<pre><code>import { FlowtapeOverlay } from '@vvedantb/flowtape/next/client';
+
+export default function RootLayout({ children }) {
+  return (
+    &lt;html lang="en"&gt;
+      &lt;body&gt;
+        {children}
+        {process.env.NODE_ENV === 'development' &amp;&amp; &lt;FlowtapeOverlay /&gt;}
+      &lt;/body&gt;
+    &lt;/html&gt;
+  );
+}</code></pre>
+              </div>
+            </div>
+          </div>
+          <p class="note">Next.js uses <code>/api/flowtape</code>, not <code>/__flowtape</code>. Pages Router and handler options are in the README.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tight" aria-labelledby="cta-title">
+    <div class="shell">
+      <div class="cta-card atmosphere grain reveal">
+        <div class="scrim" aria-hidden="true"></div>
+        <div class="inner">
+          <h2 id="cta-title">Record the next flow</h2>
+          <p class="intro">Install the package, mount the overlay, click Record.</p>
+          <div class="cta">
+            <a class="btn btn-primary" href="https://github.com/vvedantb/flowtape" rel="noreferrer">View on GitHub <svg class="icon arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+            <button class="btn btn-outline" type="button" data-copy="npm install -D @vvedantb/flowtape" aria-label="Copy install command: npm install -D @vvedantb/flowtape">
+              <span class="cmd"><span class="prompt" aria-hidden="true">$ </span>npm install -D @vvedantb/flowtape</span>
+              <svg class="icon copy-icon" aria-hidden="true"><use href="#i-copy"/></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -662,14 +961,31 @@ createRoot(root).render(
 
 <footer class="footer">
   <div class="shell">
-    <div>
-      <a class="wordmark" href="#top"><span class="wordmark-mark" aria-hidden="true"></span>flowtape</a>
-      <p>Record user journeys in Vite + React and replay them with Claude Code. Local-first, dev-only.</p>
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="wordmark" href="#top"><span class="wordmark-mark" aria-hidden="true"></span>flowtape</a>
+        <p>Record user journeys in Vite + React and Next.js apps. Replay them with Claude Code. Local-first, dev-only.</p>
+        <div class="socials">
+          <a href="https://github.com/vvedantb/flowtape" rel="noreferrer" aria-label="flowtape on GitHub"><svg aria-hidden="true"><use href="#i-gh"/></svg></a>
+          <a href="https://www.npmjs.com/package/@vvedantb/flowtape" rel="noreferrer" aria-label="flowtape on npm"><svg aria-hidden="true"><use href="#i-npm"/></svg></a>
+        </div>
+      </div>
+      <div class="footer-cols">
+        <div>
+          <h4>Navigation</h4>
+          <a href="#demo">See it work</a>
+          <a href="#features">Features</a>
+          <a href="#more">Everything else</a>
+          <a href="#setup">Setup</a>
+        </div>
+        <div>
+          <h4>Project</h4>
+          <a href="https://github.com/vvedantb/flowtape" rel="noreferrer">GitHub</a>
+          <a href="https://www.npmjs.com/package/@vvedantb/flowtape" rel="noreferrer">npm</a>
+        </div>
+      </div>
     </div>
-    <nav aria-label="Footer">
-      <a href="https://github.com/vvedantb/flowtape" rel="noreferrer">GitHub</a>
-      <a href="https://www.npmjs.com/package/@vvedantb/flowtape" rel="noreferrer">npm</a>
-    </nav>
+    <div class="footer-legal"><span>flowtape</span><span>No account. No cloud. No extension.</span></div>
   </div>
 </footer>
 
@@ -677,7 +993,15 @@ createRoot(root).render(
 
 <script>
 (function () {
-  var status = document.getElementById('copy-status');
+  var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var timers = {};
+  function later(key, fn, ms) { (timers[key] = timers[key] || []).push(setTimeout(fn, ms)); }
+  function clear(key) { (timers[key] || []).forEach(clearTimeout); timers[key] = []; }
+
+  /* Copy to clipboard */
+  var status = $('#copy-status');
   function fallback(text) {
     var ta = document.createElement('textarea');
     ta.value = text;
@@ -697,17 +1021,217 @@ createRoot(root).render(
     }
     return fallback(text);
   }
-  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+  $$('[data-copy]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var label = btn.classList.contains('copy-btn') ? btn : null;
+      var small = btn.classList.contains('copy-btn') || btn.classList.contains('mini');
+      var orig = btn.textContent;
       copy(btn.getAttribute('data-copy')).then(function () {
         status.textContent = 'Copied to clipboard';
-        if (label) { label.textContent = 'Copied'; setTimeout(function () { label.textContent = 'Copy'; }, 1600); }
+        if (small) { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = orig; }, 1600); }
       }, function () {
         status.textContent = 'Copy failed. Select the text and copy it manually.';
       });
     });
   });
+
+  /* Header: border on scroll, mobile menu */
+  var nav = $('#nav'), menuBtn = $('#menu-btn'), menu = $('#mobile-menu');
+  function onScroll() { nav.classList.toggle('scrolled', window.scrollY > 8); }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+  function setMenu(open) {
+    menuBtn.setAttribute('aria-expanded', String(open));
+    menu.classList.toggle('open', open);
+  }
+  menuBtn.addEventListener('click', function () { setMenu(menuBtn.getAttribute('aria-expanded') !== 'true'); });
+  $$('a', menu).forEach(function (a) { a.addEventListener('click', function () { setMenu(false); }); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMenu(false); });
+  window.matchMedia('(min-width: 768px)').addEventListener('change', function (e) { if (e.matches) setMenu(false); });
+
+  /* Scroll reveal */
+  var reveals = $$('.reveal');
+  if ('IntersectionObserver' in window && !RM) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    reveals.forEach(function (el) { io.observe(el); });
+  } else {
+    reveals.forEach(function (el) { el.classList.add('in'); });
+  }
+
+  /* Tabs */
+  var onShow = {};
+  $$('[data-tabs]').forEach(function (group) {
+    var tabs = $$('[role="tab"]', group);
+    function select(tab, focus) {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute('aria-selected', String(on));
+        t.tabIndex = on ? 0 : -1;
+        var panel = document.getElementById(t.getAttribute('aria-controls'));
+        panel.hidden = !on;
+        panel.classList.remove('show');
+        if (on) {
+          panel.classList.add('in');
+          void panel.offsetWidth;
+          panel.classList.add('show');
+          var fn = onShow[panel.getAttribute('data-panel')];
+          if (fn) fn();
+        }
+      });
+      if (focus) tab.focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { select(t); });
+      t.addEventListener('keydown', function (e) {
+        var j = -1;
+        if (e.key === 'ArrowRight') j = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') j = 0;
+        else if (e.key === 'End') j = tabs.length - 1;
+        if (j > -1) { e.preventDefault(); select(tabs[j], true); }
+      });
+    });
+  });
+
+  /* Demo: record */
+  var EVENTS = [
+    ['navigate', '/'],
+    ['type', 'Email = <em>ada@example.test</em>'],
+    ['type', 'Password = <em>redacted</em>'],
+    ['click', 'button “Sign in”'],
+    ['navigate', '/notes'],
+    ['type', 'Note = <em>Water the plants</em>'],
+    ['click', 'button “Add”']
+  ];
+  var recList = $('#rec-events'), recCount = $('#rec-count'), recLast = $('#rec-last');
+  function addEvent(i) {
+    var e = EVENTS[i], li = document.createElement('li');
+    if (!RM) li.className = 'enter';
+    li.innerHTML = '<span class="ev-kind">' + e[0] + '</span><span class="ev-text">' + e[1] + '</span>';
+    recList.appendChild(li);
+    recCount.textContent = String(i + 1);
+    recLast.textContent = 'Last: ' + li.textContent.replace(e[0], '').trim();
+  }
+  function playRecord() {
+    clear('rec');
+    recList.innerHTML = '';
+    recCount.textContent = '0';
+    recLast.textContent = 'Last: none yet';
+    EVENTS.forEach(function (_, i) {
+      if (RM) addEvent(i); else later('rec', function () { addEvent(i); }, 350 + i * 520);
+    });
+  }
+  onShow.record = playRecord;
+  $('#rec-replay').addEventListener('click', playRecord);
+
+  /* Demo: assert */
+  var CHECKS = {
+    text: { rows: [1, 0, 0], ghost: false, out: 'Water the plants is visible and shows “Water the plants”.' },
+    count: { rows: [1, 1, 1], ghost: false, out: '3 elements match note-item.' },
+    gone: { rows: [1, 0, 0], ghost: true, out: 'Water the plants leaves the page. Recorded after the action that removes it.' }
+  };
+  var aRows = $$('#assert-list li'), aOut = $('#assert-result'), aBtns = $$('[data-check]');
+  function setCheck(k) {
+    aBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-check') === k)); });
+    aRows.forEach(function (li, i) {
+      li.className = CHECKS[k].rows[i] ? (CHECKS[k].ghost ? 'ghost' : 'pick') : '';
+    });
+    aOut.textContent = CHECKS[k].out;
+  }
+  aBtns.forEach(function (b) { b.addEventListener('click', function () { setCheck(b.getAttribute('data-check')); }); });
+  setCheck('text');
+
+  /* Demo: export */
+  var NAME = 'Login and add note';
+  var expName = $('#exp-name'), expSaved = $('#exp-saved'), expGo = $('#exp-go');
+  function playExport() {
+    clear('exp');
+    expSaved.classList.add('hide');
+    if (RM) { expName.textContent = NAME; expSaved.classList.remove('hide'); return; }
+    expName.textContent = '';
+    for (var i = 1; i <= NAME.length; i++) {
+      (function (n) { later('exp', function () { expName.textContent = NAME.slice(0, n); }, 300 + n * 55); })(i);
+    }
+    later('exp', function () { expSaved.classList.remove('hide'); }, 300 + NAME.length * 55 + 500);
+  }
+  onShow.export = playExport;
+  expGo.addEventListener('click', function () {
+    clear('exp');
+    expName.textContent = NAME;
+    expSaved.classList.add('hide');
+    void expSaved.offsetWidth;
+    later('exp', function () { expSaved.classList.remove('hide'); }, 60);
+  });
+
+  /* Session history */
+  var hSwitch = $('#hist-switch'), hBox = $('#hist-box'), hSub = $('#hist-sub');
+  var HIST = [['navigate', '/notes'], ['click', 'button “Add”'], ['type', 'Note = <em>Water the plants</em>'], ['submit', 'form “New note”'], ['error', 'Uncaught TypeError (message, file, line)']];
+  var hOn = false, hAuto = false;
+  function renderHist() {
+    clear('hist');
+    hSwitch.setAttribute('aria-checked', String(hOn));
+    if (!hOn) {
+      hSub.textContent = 'Off';
+      hBox.innerHTML = '<div class="hist-off">Nothing is logged while this is off.</div>';
+      return;
+    }
+    hSub.textContent = 'On';
+    hBox.innerHTML = '<ol class="events"></ol>';
+    var ol = $('.events', hBox), t0 = 0;
+    HIST.forEach(function (e, i) {
+      function add() {
+        var li = document.createElement('li');
+        if (!RM) li.className = 'enter';
+        li.innerHTML = '<span class="ev-kind">+' + (t0 + i * 1400) + 'ms</span><span class="ev-text">' + e[0] + ' · ' + e[1] + '</span>';
+        ol.appendChild(li);
+      }
+      if (RM) add(); else later('hist', add, 250 + i * 700);
+    });
+  }
+  hSwitch.addEventListener('click', function () { hAuto = true; hOn = !hOn; renderHist(); });
+  renderHist();
+  var histWin = hSwitch.closest('.win');
+  if ('IntersectionObserver' in window && !RM) {
+    var hio = new IntersectionObserver(function (en) {
+      if (en[0].isIntersecting) {
+        hio.disconnect();
+        setTimeout(function () { if (!hAuto) { hOn = true; renderHist(); } }, 700);
+      }
+    }, { threshold: 0.5 });
+    hio.observe(histWin);
+  }
+
+  /* Redaction view */
+  var kvBtns = $$('[data-view]'), kvCells = $$('#kv dd');
+  function setView(v, animate) {
+    kvBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === v)); });
+    function paint() {
+      kvCells.forEach(function (dd) {
+        var val = dd.getAttribute('data-' + v);
+        dd.innerHTML = '';
+        var s = document.createElement('span');
+        if (v === 'stored' && val !== dd.getAttribute('data-raw')) s.className = 'mask';
+        s.textContent = val;
+        dd.appendChild(s);
+        dd.classList.remove('swap');
+      });
+    }
+    if (animate && !RM) { kvCells.forEach(function (dd) { dd.classList.add('swap'); }); clear('kv'); later('kv', paint, 200); } else paint();
+  }
+  kvBtns.forEach(function (b) { b.addEventListener('click', function () { setView(b.getAttribute('data-view'), true); }); });
+  setView('stored', false);
+
+  /* Start the record demo when visible */
+  var recPanel = $('#p-record');
+  if ('IntersectionObserver' in window && !RM) {
+    var rio = new IntersectionObserver(function (en) {
+      if (en[0].isIntersecting) { rio.disconnect(); playRecord(); }
+    }, { threshold: 0.35 });
+    rio.observe(recPanel);
+  } else { playRecord(); }
 })();
 </script>
 </body>
