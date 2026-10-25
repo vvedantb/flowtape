@@ -1,3 +1,4 @@
+import "@vvedantb/ui/landing.css";
 import {
   IconArrowRight,
   IconBrandGithub,
