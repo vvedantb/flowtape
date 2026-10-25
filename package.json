@@ -4,18 +4,20 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "site"
   ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build": "npm run build -w @vvedantb/flowtape && npm run build -w flowtape-vite-demo",
+    "build": "npm run build -w @vvedantb/flowtape && npm run build -w flowtape-vite-demo && npm run build -w flowtape-site",
     "test": "npm test -w @vvedantb/flowtape",
     "test:e2e": "npm run build -w @vvedantb/flowtape && playwright test",
     "dev": "npm run build -w @vvedantb/flowtape && npm run dev -w flowtape-vite-demo",
-    "typecheck": "npm run typecheck -w @vvedantb/flowtape && npm run typecheck -w flowtape-vite-demo && npm run typecheck -w flowtape-next-demo && tsc -p e2e --noEmit",
-    "history": "node packages/flowtape/dist/cli.js history examples/vite-demo"
+    "typecheck": "npm run typecheck -w @vvedantb/flowtape && npm run typecheck -w flowtape-vite-demo && npm run typecheck -w flowtape-next-demo && npm run typecheck -w flowtape-site && tsc -p e2e --noEmit",
+    "history": "node packages/flowtape/dist/cli.js history examples/vite-demo",
+    "dev:site": "npm run dev -w flowtape-site"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

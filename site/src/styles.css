@@ -1,0 +1,22 @@
+@import "tailwindcss";
+@import "@vvedantb/ui/tokens";
+@import "@vvedantb/ui/landing.css";
+@source "../node_modules/@vvedantb/ui/src/**/*.{ts,tsx}";
+@source "../node_modules/@vvedantb/ui/shell/src/**/*.{ts,tsx}";
+@source "../node_modules/@vvedantb/ui/app/src/**/*.{ts,tsx}";
+@source "../node_modules/@vvedantb/ui/src/marketing/landing.css";
+@source "./**/*.{ts,tsx}";
+
+@theme {
+  --font-instrumentSerif: "Instrument Serif", Georgia, serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

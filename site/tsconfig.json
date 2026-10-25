@@ -1,0 +1,9 @@
+{
+  "extends": "@vvedantb/config/tsconfig/web.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "paths": { "@/*": ["./src/*"] },
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*", "vite.config.ts"]
+}
