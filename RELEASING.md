@@ -24,17 +24,17 @@ Pick `@vvedantb/flowtape`, choose the bump (patch, minor or major) and write a s
 
 Use `vX.Y.Z` (for example `v0.4.1`) for tags and GitHub releases. Do not use the `@vvedantb/flowtape@X.Y.Z` form for releases.
 
-## Trusted publishing (no token needed)
+## Trusted publishing (OIDC only)
 
-Publishing uses npm Trusted Publishing (OIDC). The workflow needs `id-token: write` and npm 11.5.1 or later (the job upgrades npm).
+Publishing uses npm Trusted Publishing (OIDC) only. The workflow needs `id-token: write` and npm 11.5.1 or later (the job upgrades npm).
 
 One-time setup on npmjs.com, in the package settings for `@vvedantb/flowtape`: add a trusted publisher with owner `vvedantb`, repository `flowtape`, workflow `release.yml`.
 
-No `NPM_TOKEN` is required. If the repository secret `NPM_TOKEN` is set, the workflow passes it as a fallback. Leave it unset to use OIDC.
+No `NPM_TOKEN` is used or required. The workflow does not read any npm token secret.
 
 ## Dry run
 
-Run the workflow from the Actions tab (Release, "Run workflow") with `dry_run` ticked. It installs, builds, tests, prints `changeset status` and runs `npm publish --dry-run`. It publishes nothing.
+Run the workflow from the Actions tab (Release, "Run workflow") with `dry_run` ticked. It installs, builds, tests, prints `changeset status` and runs `npm publish --dry-run --tag dryrun` under a throwaway version (`0.0.0-dryrun.<run id>`, set on the runner only), so it passes even when the current version is already on npm. It publishes nothing.
 
 ## Version and tag mismatch
 
