@@ -17,9 +17,14 @@
     "dev": "npm run build -w @vvedantb/flowtape && npm run dev -w flowtape-vite-demo",
     "typecheck": "npm run typecheck -w @vvedantb/flowtape && npm run typecheck -w flowtape-vite-demo && npm run typecheck -w flowtape-next-demo && npm run typecheck -w flowtape-site && tsc -p e2e --noEmit",
     "history": "node packages/flowtape/dist/cli.js history examples/vite-demo",
-    "dev:site": "npm run dev -w flowtape-site"
+    "dev:site": "npm run dev -w flowtape-site",
+    "changeset": "changeset",
+    "changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts",
+    "release": "npm run build -w @vvedantb/flowtape && npm test && changeset publish"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@playwright/test": "1.63.0",
     "@types/node": "^22.15.0",
     "typescript": "^5.8.3"

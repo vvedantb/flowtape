@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build, test and run npm publish --dry-run. Publishes nothing.
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: dry-run
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Ensure npm >= 11.5.1
+        run: npm install -g npm@^11.5.1 && npm --version
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Changeset status
+        run: npx changeset status || true
+      - name: Publish (dry run)
+        run: npm publish -w @vvedantb/flowtape --dry-run
+
+  release:
+    name: release
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Trusted Publishing (OIDC) needs npm 11.5.1 or later.
+      - name: Ensure npm >= 11.5.1
+        run: npm install -g npm@^11.5.1 && npm --version
+      - run: npm ci
+      - name: Version Packages PR or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npm run changeset:version
+          publish: npm run release
+          commit: "Version Packages"
+          title: "Version Packages"
+          # Releases use vX.Y.Z tags. The step below creates them.
+          createGithubReleases: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional fallback. Leave the secret unset to publish with OIDC.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || '' }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || '' }}
+      - name: Create vX.Y.Z tag and GitHub release
+        if: ${{ steps.changesets.outputs.published == 'true' && contains(fromJSON(steps.changesets.outputs.publishedPackages).*.name, '@vvedantb/flowtape') }}
+        run: scripts/github-release.sh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
