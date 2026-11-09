@@ -40,6 +40,8 @@ jobs:
       - run: npm test
       - name: Changeset status
         run: npx changeset status || true
+      - name: Set throwaway version (runner only)
+        run: npm version 0.0.0-dryrun.${GITHUB_RUN_ID} --no-git-tag-version -w @vvedantb/flowtape
       - name: Publish (dry run)
         run: npm publish -w @vvedantb/flowtape --dry-run
 

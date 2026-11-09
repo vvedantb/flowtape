@@ -34,7 +34,7 @@ No `NPM_TOKEN` is required. If the repository secret `NPM_TOKEN` is set, the wor
 
 ## Dry run
 
-Run the workflow from the Actions tab (Release, "Run workflow") with `dry_run` ticked. It installs, builds, tests, prints `changeset status` and runs `npm publish --dry-run`. It publishes nothing.
+Run the workflow from the Actions tab (Release, "Run workflow") with `dry_run` ticked. It installs, builds, tests, prints `changeset status` and runs `npm publish --dry-run` under a throwaway version (`0.0.0-dryrun.<run id>`, set on the runner only), so it passes even when the current version is already on npm. It publishes nothing.
 
 ## Version and tag mismatch
 
