@@ -29,5 +29,9 @@ jobs:
         run: npm run build
       - name: Typecheck
         run: npm run typecheck
+      - name: Lint tests
+        run: npm run lint:tests
       - name: Test
         run: npm test
+      # Playwright e2e stays out of CI on purpose (browsers and demos).
+      # Run it locally with `npm run test:e2e`.
