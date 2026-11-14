@@ -20,12 +20,12 @@ import {
   CodeBlockCopyButton,
   LandingFeatureCard,
   LandingFooter,
-  LandingNavMenu,
   LandingPageLayout,
   LandingSection,
   LandingSectionHeading,
   ProductHero,
   ProductHeroOrbit,
+  SiteHeader,
   Tabs,
   TabsContent,
   TabsList,
@@ -35,7 +35,7 @@ import {
 } from "@vvedantb/ui";
 import { useState, type ReactNode } from "react";
 import { GITHUB_URL, INSTALL_COMMAND, NAV_LINKS, NPM_URL } from "./content";
-import { LandingCta, LandingNav, LandingReveal, LandingRevealItem } from "./kit";
+import { LandingCta, LandingReveal, LandingRevealItem } from "./kit";
 import { AssertMock, ExportMock, HistoryMock, PromptMock, RecordMock, RedactionMock } from "./Mocks";
 import { Wordmark } from "./Wordmark";
 
@@ -98,24 +98,20 @@ function Snippet({ title, code, copy = false }: { title: string; code: string; c
 
 function Nav() {
   return (
-    <LandingNav
+    <SiteHeader
       brand={<Wordmark />}
+      homeHref="#top"
       homeLabel="flowtape home"
       links={NAV_LINKS}
-      github={{ ...github, label: "flowtape on GitHub", icon: <IconBrandGithub size={18} /> }}
-      actions={
-        <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex">
+      githubUrl={GITHUB_URL}
+      githubLabel="flowtape on GitHub"
+      cta={
+        <Button asChild size="sm" className="rounded-full">
           <a href={NPM_URL} target="_blank" rel="noreferrer">
             <IconBrandNpm size={16} aria-hidden />
             npm
           </a>
         </Button>
-      }
-      menu={
-        <LandingNavMenu
-          links={[...NAV_LINKS, { href: NPM_URL, label: "npm" }]}
-          github={github}
-        />
       }
     />
   );
