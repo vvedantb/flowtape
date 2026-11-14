@@ -8,12 +8,3 @@ export const NAV_LINKS = [
   { href: "#more", label: "Everything else" },
   { href: "#setup", label: "Setup" },
 ] as const;
-
-export const HERO_CAPABILITIES = [
-  "Record",
-  "Export prompts",
-  "Vite + Next.js",
-  "Session history",
-  "Redaction",
-  "Local-first",
-] as const;

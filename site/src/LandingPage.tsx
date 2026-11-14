@@ -24,6 +24,8 @@ import {
   LandingPageLayout,
   LandingSection,
   LandingSectionHeading,
+  ProductHero,
+  ProductHeroOrbit,
   Tabs,
   TabsContent,
   TabsList,
@@ -31,9 +33,9 @@ import {
   landingFooterLinkClass,
   landingPanelClass,
 } from "@vvedantb/ui";
-import type { ReactNode } from "react";
-import { GITHUB_URL, HERO_CAPABILITIES, INSTALL_COMMAND, NAV_LINKS, NPM_URL } from "./content";
-import { LandingCta, LandingHero, LandingNav, LandingReveal, LandingRevealItem } from "./kit";
+import { useState, type ReactNode } from "react";
+import { GITHUB_URL, INSTALL_COMMAND, NAV_LINKS, NPM_URL } from "./content";
+import { LandingCta, LandingNav, LandingReveal, LandingRevealItem } from "./kit";
 import { AssertMock, ExportMock, HistoryMock, PromptMock, RecordMock, RedactionMock } from "./Mocks";
 import { Wordmark } from "./Wordmark";
 
@@ -120,23 +122,20 @@ function Nav() {
 }
 
 function Hero() {
+  const [copied, setCopied] = useState(false);
+  const copyInstall = async () => {
+    await navigator.clipboard.writeText(INSTALL_COMMAND);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
   return (
-    <LandingHero
-      eyebrow="No account. No cloud. No extension."
+    <ProductHero
       title="Record a flow. Replay it with an agent."
-      description="A dev-only overlay for Vite + React and Next.js. Click Record, use your app, export a Claude Code prompt."
-      actions={
-        <>
-          <Button asChild size="lg" className="w-full sm:w-auto">
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer">
-              View on GitHub
-              <IconArrowRight size={16} aria-hidden />
-            </a>
-          </Button>
-          <InstallButton />
-        </>
-      }
-      capabilities={HERO_CAPABILITIES}
+      tagline="A dev-only overlay for Vite + React and Next.js. Click Record, use your app, export a Claude Code prompt."
+      primaryCta={{ label: "View on GitHub", href: GITHUB_URL, target: "_blank", rel: "noreferrer" }}
+      secondaryCta={{ label: copied ? "Copied" : INSTALL_COMMAND, onClick: () => void copyInstall() }}
+      visual={<ProductHeroOrbit />}
+      showProductOf={false}
     />
   );
 }
