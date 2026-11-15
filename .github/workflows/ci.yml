@@ -14,24 +14,16 @@ concurrency:
 
 jobs:
   ci:
-    name: ci
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
+    uses: vvedantb/packages/.github/workflows/ci-app.yml@main
+    with:
+      package_manager: npm
+      runs_on: ubuntu-latest
+      timeout_minutes: 15
       # The package must build first: the demos and site import its dist output.
-      - name: Build
-        run: npm run build
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint tests
-        run: npm run lint:tests
-      - name: Test
-        run: npm test
-      # Playwright e2e stays out of CI on purpose (browsers and demos).
-      # Run it locally with `npm run test:e2e`.
+      # Playwright e2e stays out of CI on purpose (browsers and demos), as before.
+      keep_going: false
+      commands: |
+        npm run build
+        npm run typecheck
+        npm run lint:tests
+        npm test
