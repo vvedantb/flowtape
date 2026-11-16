@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     branches: [main]
+    # Only a changeset file can lead to a version pull request or a publish:
+    # adding a changeset and merging the Version Packages pull request both
+    # change .changeset/. Other pushes to main have nothing to release, so
+    # they do not start a run. Use workflow_dispatch to run it by hand.
+    paths:
+      - ".changeset/**"
   workflow_dispatch:
     inputs:
       dry_run:
