@@ -25,5 +25,6 @@ jobs:
       commands: |
         npm run build
         npm run typecheck
+        npm run lint
         npm run lint:tests
         npm test

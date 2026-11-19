@@ -155,7 +155,7 @@ function stepLines(event: FlowEvent, index: number, events: FlowEvent[], origin:
     case 'submit': {
       // A submit right after a click is that click's effect.
       if (previous?.type === 'click') return [];
-      const field = [...events.slice(0, index)].reverse().find((e): e is InputEvent => e.type === 'input');
+      const field = events.slice(0, index).reverse().find((e): e is InputEvent => e.type === 'input');
       return field ? [`await ${locator(field, 'field')}.press("Enter");`] : ['// TODO: the recording submitted a form here without a click. Submit it.'];
     }
     case 'assert': {
