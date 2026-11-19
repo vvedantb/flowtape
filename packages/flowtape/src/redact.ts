@@ -34,7 +34,7 @@ const SENSITIVE_NAME =
 /** NHS number check digit (modulus 11). A 10-digit run that fails it is not an NHS number. */
 export function isNhsNumber(digits: string): boolean {
   if (!/^\d{10}$/.test(digits)) return false;
-  const sum = [...digits.slice(0, 9)].reduce((total, digit, index) => total + Number(digit) * (10 - index), 0);
+  const sum = Array.from(digits.slice(0, 9)).reduce((total, digit, index) => total + Number(digit) * (10 - index), 0);
   const check = 11 - (sum % 11);
   if (check === 10) return false;
   return (check === 11 ? 0 : check) === Number(digits[9]);

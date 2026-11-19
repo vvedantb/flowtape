@@ -45,7 +45,7 @@ describe('recording across a full page load', () => {
     const events = after.getSnapshot().events;
     expect(events.map((e) => (e.type === 'navigate' ? `navigate ${new URL(e.url).pathname}` : e.type))).toEqual(['navigate /form', 'input', 'navigate /form/saved', 'click']);
     // `ts` keeps counting from the first page.
-    expect(events.map((e) => e.ts)).toEqual([...events.map((e) => e.ts)].sort((a, b) => a - b));
+    expect(events.map((e) => e.ts)).toEqual(events.map((e) => e.ts).sort((a, b) => a - b));
   });
 
   it('does not add a navigate event for a reload of the same URL, and clear() forgets the recording', () => {
