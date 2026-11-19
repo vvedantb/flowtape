@@ -29,7 +29,7 @@
     "@changesets/cli": "^3.0.3",
     "@playwright/test": "1.63.0",
     "@types/node": "^22.15.0",
-    "@vvedantb/config": "0.10.1",
+    "@vvedantb/config": "0.11.0",
     "oxlint": "^1.93.0",
     "tsrs": "7.1.0-beta.tsrs2",
     "typescript": "^5.8.3"
