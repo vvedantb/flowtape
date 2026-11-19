@@ -1,0 +1,6 @@
+{
+  "ciCommands": {
+    "npm run build": "The package must build before typecheck and test: the demos and site import the @vvedantb/flowtape dist output.",
+    "npm run lint:tests": "Guards that tests exercise real code and never read source files as text (scripts/no-source-text-in-tests.mjs)."
+  }
+}

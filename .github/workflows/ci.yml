@@ -17,7 +17,7 @@ jobs:
     uses: vvedantb/packages/.github/workflows/ci-app.yml@main
     with:
       package_manager: npm
-      runs_on: ubuntu-latest
+      runs_on: boat-large
       timeout_minutes: 15
       # The package must build first: the demos and site import its dist output.
       # Playwright e2e stays out of CI on purpose (browsers and demos), as before.

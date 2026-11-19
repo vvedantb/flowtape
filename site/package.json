@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsrs -p tsconfig.json",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -34,7 +34,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.0",
-    "@vvedantb/config": "^0.3.0",
+    "@vvedantb/config": "0.10.1",
     "oxc-transform-react": "^0.152.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
