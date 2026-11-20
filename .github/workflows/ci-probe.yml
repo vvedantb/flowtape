@@ -1,0 +1,22 @@
+name: CI probe (throwaway)
+
+# Throwaway probe for vvedantb/packages ci/bun-test: proves the shared
+# reusable workflow's bun_version + affected_tests contract. Not for merge.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    uses: vvedantb/packages/.github/workflows/ci-app.yml@ci/bun-test
+    with:
+      package_manager: npm
+      fetch_depth: 0
+      bun_version: "1.4.5"
+      affected_tests: true
+      commands: |
+        echo scope=$VV_TEST_SCOPE changed=$VV_TEST_CHANGED && bun --version
