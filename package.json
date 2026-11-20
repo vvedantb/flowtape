@@ -1,6 +1,5 @@
 {
   "name": "flowtape-monorepo",
-  "flowtapeProbe": "case2-throwaway",
   "private": true,
   "type": "module",
   "workspaces": [
