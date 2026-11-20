@@ -221,3 +221,5 @@ export function stagedFlowtapeFiles(cwd = process.cwd()): AuditSource[] {
 export function formatFindings(findings: AuditFinding[]): string {
   return findings.map((f) => `${f.severity === 'error' ? 'error  ' : 'warning'} ${f.file} ${f.where}: ${f.kind}: ${f.message}`).join('\n');
 }
+
+// narrowed-run probe
