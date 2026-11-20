@@ -19,12 +19,17 @@ jobs:
       package_manager: npm
       runs_on: boat-large
       timeout_minutes: 15
-      # The package must build first: the demos and site import its dist output.
+      # Parallel runs every command and reports all failures at the end, so it needs keep_going: true.
+      # Typecheck of the demos and site reads the package dist types, so it runs after the build in one command.
+      # Tests import src only, so they do not wait for the build.
+      keep_going: true
+      parallel: true
+      max_parallel: 4
+      fetch_depth: 0
+      affected_tests: true
       # Playwright e2e stays out of CI on purpose (browsers and demos), as before.
-      keep_going: false
       commands: |
-        npm run build
-        npm run typecheck
+        npm run build && npm run typecheck
         npm run lint
         npm run lint:tests
-        npm test
+        npm test -- $VV_TEST_CHANGED ${VV_TEST_CHANGED:+--passWithNoTests}
