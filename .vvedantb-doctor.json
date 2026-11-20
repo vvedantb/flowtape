@@ -1,6 +1,7 @@
 {
   "ciCommands": {
-    "npm run build": "The package must build before typecheck and test: the demos and site import the @vvedantb/flowtape dist output.",
-    "npm run lint:tests": "Guards that tests exercise real code and never read source files as text (scripts/no-source-text-in-tests.mjs)."
+    "npm run build && npm run typecheck": "The package must build before typecheck: the demos and site import the @vvedantb/flowtape dist output. Chained so the other checks run in parallel meanwhile.",
+    "npm run lint:tests": "Guards that tests exercise real code and never read source files as text (scripts/no-source-text-in-tests.mjs).",
+    "npm test -- $VV_TEST_CHANGED ${VV_TEST_CHANGED:+--passWithNoTests}": "Runs the Vitest suite. Pull requests run only the tests the diff can reach (VV_TEST_CHANGED); main and full scope run everything and still fail on zero tests."
   }
 }
