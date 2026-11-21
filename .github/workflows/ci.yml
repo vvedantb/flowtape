@@ -17,14 +17,14 @@ jobs:
     uses: vvedantb/packages/.github/workflows/ci-app.yml@main
     with:
       package_manager: npm
-      runs_on: boat-large
+      runs_on: ubuntu-latest
       timeout_minutes: 15
       # Parallel runs every command and reports all failures at the end, so it needs keep_going: true.
       # Typecheck of the demos and site reads the package dist types, so it runs after the build in one command.
       # Tests import src only, so they do not wait for the build.
       keep_going: true
       parallel: true
-      max_parallel: 4
+      max_parallel: 2
       fetch_depth: 0
       affected_tests: true
       # Playwright e2e stays out of CI on purpose (browsers and demos), as before.
